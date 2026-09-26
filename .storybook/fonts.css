@@ -1,0 +1,14 @@
+/*
+ * next/font/google (Geist, Geist Mono) doesn't actually load a font under
+ * Storybook's Vite mock — it swaps in a placeholder class with no real
+ * @font-face, silently falling back to the browser's serif default. Loading
+ * the same faces from Google Fonts directly and pointing the app's own
+ * --font-geist-* variables at them keeps every story visually faithful to
+ * src/app/layout.tsx without depending on that mock.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap");
+
+:root {
+  --font-geist-sans: "Geist", sans-serif;
+  --font-geist-mono: "Geist Mono", monospace;
+}

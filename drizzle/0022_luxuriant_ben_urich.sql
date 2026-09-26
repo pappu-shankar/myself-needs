@@ -1,0 +1,1 @@
+ALTER TABLE `finance_settings` ADD `getting_started_dismissed` integer DEFAULT false NOT NULL;
