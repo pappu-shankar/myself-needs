@@ -2,6 +2,8 @@ import { requireUnlocked } from "@/modules/core/session/guard";
 import { SidebarNav } from "./sidebar-nav";
 import { Breadcrumbs } from "./breadcrumbs";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   await requireUnlocked();
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import {
   createCashFlow,
   createHolding,
@@ -32,6 +33,7 @@ export async function addHoldingAction(
   _prevState: AddHoldingState,
   formData: FormData,
 ): Promise<AddHoldingState> {
+  await requireUnlocked();
   const parsed = holdingSchema.safeParse({
     type: formData.get("type"),
     name: formData.get("name"),
@@ -86,6 +88,7 @@ export async function addCashFlowAction(
   _prevState: AddCashFlowState,
   formData: FormData,
 ): Promise<AddCashFlowState> {
+  await requireUnlocked();
   const parsed = cashFlowSchema.safeParse({
     holdingId: formData.get("holdingId"),
     date: formData.get("date"),
@@ -118,6 +121,7 @@ export async function addValuationAction(
   _prevState: AddValuationState,
   formData: FormData,
 ): Promise<AddValuationState> {
+  await requireUnlocked();
   const parsed = valuationSchema.safeParse({
     holdingId: formData.get("holdingId"),
     date: formData.get("date"),
@@ -143,6 +147,7 @@ export async function refreshNavAction(
   _prevState: RefreshNavState,
   formData: FormData,
 ): Promise<RefreshNavState> {
+  await requireUnlocked();
   const holdingId = Number(formData.get("holdingId"));
   if (!Number.isInteger(holdingId)) {
     return { error: "Invalid holding" };

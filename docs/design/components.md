@@ -8,7 +8,7 @@
 |---|---|
 | `PageHeader` | Consistent title/subtitle/actions across every module page |
 | `Card` | Soft elevation, the base container everywhere |
-| `StatTile` | Dashboard/report numbers, smooth count-up animation via Motion rather than numbers just appearing |
+| `StatTile` | Dashboard/report numbers, (planned; not built yet) |
 | `DataTable` | TanStack Table + Virtual; right-aligned numeric columns; muted secondary metadata (date/category) on its own line, not crowding the primary value |
 | `FormField` | Label + error + hint, consistent across every form in every module |
 | `EmptyState` | A real designed state with an icon and a clear next action — never bare "no data" text |

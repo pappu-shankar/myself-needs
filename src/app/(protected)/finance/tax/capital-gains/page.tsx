@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getCapitalGainsEstimate } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -22,7 +23,8 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function CapitalGainsPage() {
+export default async function CapitalGainsPage() {
+  await requireUnlocked();
   const capitalGains = getCapitalGainsEstimate();
 
   return (

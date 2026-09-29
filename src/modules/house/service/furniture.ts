@@ -5,6 +5,7 @@ import {
   updateFurnitureRow,
   type NewFurniture,
 } from "../db/queries/furniture";
+import { requireUpdated } from "./guards";
 
 export function getFurnitureForRoom(roomId: number) {
   return listFurnitureForRoom(roomId);
@@ -19,5 +20,5 @@ export function createFurniture(entry: NewFurniture) {
 }
 
 export function updateFurniture(id: number, entry: Partial<NewFurniture>) {
-  return updateFurnitureRow(id, entry);
+  return requireUpdated(updateFurnitureRow(id, entry), "furniture item");
 }

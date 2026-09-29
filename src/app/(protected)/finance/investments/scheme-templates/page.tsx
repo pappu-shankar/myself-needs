@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getSchemeTemplates } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -18,7 +19,8 @@ export const metadata: Metadata = {
   title: "Scheme templates — Investments — Personal Life OS",
 };
 
-export default function SchemeTemplatesPage() {
+export default async function SchemeTemplatesPage() {
+  await requireUnlocked();
   const schemeTemplates = getSchemeTemplates();
 
   return (

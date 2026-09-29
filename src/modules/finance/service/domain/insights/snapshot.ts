@@ -17,6 +17,7 @@ import {
   countUncategorizedTransactions,
 } from "../../../db/queries/domain/insights";
 import { getInsightsSettings } from "../../../db/queries/config/insights-settings";
+import { todayIso } from "@/lib/dates";
 
 /**
  * Everything every rule function needs, gathered once per engine run —
@@ -25,7 +26,7 @@ import { getInsightsSettings } from "../../../db/queries/config/insights-setting
  */
 export function getFinanceSnapshot() {
   return {
-    today: new Date().toISOString().slice(0, 10),
+    today: todayIso(),
     accounts: getAccounts(),
     holdings: getHoldingsWithValue(),
     budgets: getBudgetsForMonth(),

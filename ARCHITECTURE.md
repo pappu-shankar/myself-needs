@@ -25,8 +25,8 @@ System design index. This file is a table of contents only — detail lives one-
 | Database | SQLite via `better-sqlite3-multiple-ciphers` (encrypted at rest) |
 | ORM | Drizzle ORM + drizzle-kit |
 | Validation | Zod |
-| Client data | TanStack Query + TanStack Table/Virtual |
-| Animation | Motion |
+| Tables | TanStack Table + TanStack Virtual (server data arrives via Server Components; no client data-fetching library) |
+| Animation | CSS transitions (Tailwind + tw-animate-css), always gated on `prefers-reduced-motion` |
 | Returns math | `xirr` (npm) + hand-written CAGR/IRR/SIP/Lumpsum/inflation formulas |
 | Testing | Vitest + Testing Library + vitest-axe |
 | Package manager | pnpm |

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { todayIso } from "@/lib/dates";
 // Import directly from actions.ts, not the module's index.ts barrel — see
 // docs/architecture/system-design.md.
 import { addMedicationAction, type AddMedicationState } from "@/modules/mental/actions";
@@ -32,13 +33,7 @@ export function MedicationForm() {
         <Input type="text" name="frequency" id="medFrequency" placeholder="e.g. once daily" />
       </FormField>
       <FormField label="Start date" htmlFor="medStartDate">
-        <Input
-          type="date"
-          name="startDate"
-          id="medStartDate"
-          required
-          defaultValue={new Date().toISOString().slice(0, 10)}
-        />
+        <Input type="date" name="startDate" id="medStartDate" required defaultValue={todayIso()} />
       </FormField>
       <FormField label="End date" htmlFor="medEndDate" hint="Optional">
         <Input type="date" name="endDate" id="medEndDate" />

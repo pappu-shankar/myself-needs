@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getDataDir } from "@/modules/core/env/paths";
 import {
@@ -10,6 +10,7 @@ import {
   listGarments,
 } from "../db/queries/garments";
 import type { GarmentCategory } from "../types";
+import { DomainError } from "@/modules/core/errors";
 
 const GARMENTS_SUBDIR = "fashion-garments";
 
@@ -50,23 +51,40 @@ export interface UploadedGarmentInput {
  * inserts the DB row referencing it — same pattern as service/photos.ts's
  * createPhoto(). */
 export function createGarment(input: UploadedGarmentInput) {
+  if (input.bytes.length === 0) throw new DomainError("Garment data is empty.");
+  if (
+    ![input.representativeColor.l, input.representativeColor.a, input.representativeColor.b].every(
+      Number.isFinite,
+    )
+  ) {
+    throw new DomainError("Garment color values must be numbers.");
+  }
   const filename = `${randomUUID()}.png`;
-  writeFileSync(resolveGarmentFilePath(filename), input.bytes);
-
-  return insertGarment({
-    category: input.category,
-    filename,
-    originalName: input.originalName,
-    mimeType: "image/png",
-    representativeColorLabL: input.representativeColor.l,
-    representativeColorLabA: input.representativeColor.a,
-    representativeColorLabB: input.representativeColor.b,
-    representativeColorHex: input.representativeColor.hex,
-  });
+  const filePath = resolveGarmentFilePath(filename);
+  writeFileSync(filePath, input.bytes);
+  try {
+    return insertGarment({
+      category: input.category,
+      filename,
+      originalName: input.originalName,
+      mimeType: "image/png",
+      representativeColorLabL: input.representativeColor.l,
+      representativeColorLabA: input.representativeColor.a,
+      representativeColorLabB: input.representativeColor.b,
+      representativeColorHex: input.representativeColor.hex,
+    });
+  } catch (error) {
+    unlinkSync(filePath);
+    throw error;
+  }
 }
 
 export function deleteGarment(id: number) {
+  const garment = getGarmentByIdRow(id);
+  if (!garment) throw new DomainError("The garment no longer exists.");
   deleteGarmentRow(id);
+  const filePath = resolveGarmentFilePath(garment.filename);
+  if (existsSync(filePath)) unlinkSync(filePath);
 }
 
 /** Reads a garment's file bytes for the garments Route Handler — same

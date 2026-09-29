@@ -5,6 +5,7 @@ import {
   updateRoomRow,
   type NewRoom,
 } from "../db/queries/rooms";
+import { requireUpdated } from "./guards";
 
 export function getRoomsForFloor(floorId: number) {
   return listRoomsForFloor(floorId);
@@ -19,5 +20,5 @@ export function createRoom(entry: NewRoom) {
 }
 
 export function updateRoom(id: number, entry: Partial<NewRoom>) {
-  return updateRoomRow(id, entry);
+  return requireUpdated(updateRoomRow(id, entry), "room");
 }

@@ -19,9 +19,11 @@ Single-user, local-only personal life management app (finance/health/mental/plan
 
 ## The one rule that matters most
 
-Modules (`src/modules/finance`, `health`, `mental`, `plans`, `house`, `core`) **never import from each other**. Each module exposes only its `index.ts`. Cross-module composition happens at the `src/app/` route layer. Cross-module references are a plain ID column, never a schema-level foreign key. Full detail: [docs/architecture/system-design.md](./docs/architecture/system-design.md).
+Modules (`src/modules/finance`, `health`, `mental`, `plans`, `house`, `fashion`, `core`) **never import from each other** (`core` is the shared kernel every module may import). Each module exposes only its `index.ts`. Cross-module composition happens at the `src/app/` route layer. Cross-module references are a plain ID column, never a schema-level foreign key. Full detail: [docs/architecture/system-design.md](./docs/architecture/system-design.md).
 
 **Also:** a `"use client"` component calling a Server Action must import it from `modules/<module>/actions.ts` directly, never from the module's `index.ts` barrel — the barrel also carries plain service/query code that transitively needs the native SQLite binding, which breaks the client bundle. Symptom looks like a generic `ENOENT build-manifest.json` on first request, not an obvious import error. Same doc has the full explanation.
+
+**Every Server Action** is built with `defineFormAction`/`defineAction` (`src/modules/core/action/define-action.ts`) — it enforces the unlocked session, Zod validation and consistent `ActionState` results. **Every protected page** starts with `await requireUnlocked()`. Services throw `DomainError` for user-facing failures. "Today" is `todayIso()` from `src/lib/dates.ts`, never `toISOString().slice(0, 10)`. All of this is checked by `src/test/architecture.test.ts`. Details: [docs/architecture/system-design.md](./docs/architecture/system-design.md#server-actions-and-pages-the-enforced-conventions).
 
 ## Where things live
 
@@ -32,6 +34,8 @@ Modules (`src/modules/finance`, `health`, `mental`, `plans`, `house`, `core`) **
 | A module's Server Actions | `src/modules/<module>/actions/` |
 | What a module is supposed to do | `docs/prd/<module>/` |
 | Design tokens / components | `docs/design/` |
+| Shared helpers (dates, money/percent formatting, Zod field types, action-success hook) | `src/lib/` |
+| Action wrapper, session guard, vault crypto, logging | `src/modules/core/` |
 | Why a technical decision was made | `docs/architecture/` |
 
 ## Parallelize independent work by default in auto mode
@@ -61,5 +65,5 @@ This is a single-user app: `data/app.db` is the one real vault a real user's act
 
 ## Before committing
 
-Pre-commit hooks (husky + lint-staged) run lint, typecheck, and affected tests automatically. If you're making a change by hand outside that flow, run `pnpm lint && pnpm exec tsc --noEmit && pnpm test` first.
+Pre-commit hooks (husky + lint-staged) lint and format the staged files, then run the typecheck and the full test suite. Before a larger change lands, also confirm the production build: `pnpm verify` runs lint, typecheck, tests and `next build` together.
 

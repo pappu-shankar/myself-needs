@@ -17,8 +17,10 @@ Cross-cutting rules for how every module's schema/queries are structured. Table-
 
 ## Migrations
 
-- `drizzle-kit` generates migrations into `/drizzle` at the repo root.
-- Run migrations manually (`pnpm drizzle-kit migrate`) — no auto-migrate-on-boot, so a schema change is always a deliberate, reviewable step.
+- `pnpm db:generate` (drizzle-kit) generates migrations into `/drizzle` at the repo root. Review the SQL before committing it.
+- Migrations are applied **automatically when the vault is unlocked** (`openDatabase` in `src/modules/core/db/client.ts`), over the already-authenticated encrypted connection. **Never run `drizzle-kit migrate` or `drizzle-kit push`** — the CLI can't open the encrypted file and would create or corrupt a plaintext one (see the note in `drizzle.config.ts`).
+- Before applying any pending migration to an existing vault, the app copies the encrypted `app.db` byte-for-byte to `data/backups/app-<timestamp>-before-migration.db` (owner-only permissions; the newest 5 are kept). If a migration throws, or leaves new foreign-key violations, the backup is restored and the unlock fails with a clear message — the vault is never left half-migrated.
+- Foreign-key enforcement is switched off while migrations run (drizzle-kit's table-rebuild migrations need that, and SQLite ignores the `PRAGMA` inside the migrator's transaction) and re-verified with `PRAGMA foreign_key_check` afterwards.
 
 ## The "computed, not snapshotted" pattern
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { confirmRecurringOccurrence, createRecurringRule } from "../../service/domain/recurring";
 import { TRANSACTION_TYPES, RECURRING_FREQUENCIES } from "../../types";
 
@@ -35,6 +36,7 @@ export async function addRecurringRuleAction(
   _prevState: AddRecurringRuleState,
   formData: FormData,
 ): Promise<AddRecurringRuleState> {
+  await requireUnlocked();
   const parsed = recurringRuleSchema.safeParse({
     type: formData.get("type"),
     accountId: formData.get("accountId"),
@@ -85,6 +87,7 @@ export async function confirmRecurringAction(
   _prevState: ConfirmRecurringState,
   formData: FormData,
 ): Promise<ConfirmRecurringState> {
+  await requireUnlocked();
   const parsed = confirmSchema.safeParse({
     ruleId: formData.get("ruleId"),
     amount: formData.get("amount"),

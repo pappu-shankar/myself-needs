@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { setTaxSettings, editTaxSlabRate } from "../../service/config/tax";
 
 const settingsSchema = z.object({
@@ -29,6 +30,7 @@ export async function updateTaxSettingsAction(
   _prevState: UpdateTaxSettingsState,
   formData: FormData,
 ): Promise<UpdateTaxSettingsState> {
+  await requireUnlocked();
   const parsed = settingsSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid settings" };
@@ -52,6 +54,7 @@ export async function updateSlabRateAction(
   _prevState: UpdateSlabRateState,
   formData: FormData,
 ): Promise<UpdateSlabRateState> {
+  await requireUnlocked();
   const parsed = slabRateSchema.safeParse({
     id: formData.get("id"),
     ratePercent: formData.get("ratePercent"),

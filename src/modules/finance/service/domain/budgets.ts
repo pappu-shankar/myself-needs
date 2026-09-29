@@ -1,4 +1,5 @@
 import { insertBudget, listBudgetsForMonth, type NewBudget } from "../../db/queries/domain/budgets";
+import { todayIso } from "@/lib/dates";
 
 export function createBudget(entry: NewBudget) {
   return insertBudget(entry);
@@ -6,7 +7,7 @@ export function createBudget(entry: NewBudget) {
 
 /** `month` as "YYYY-MM"; defaults to the current month. */
 export function getBudgetsForMonth(month?: string) {
-  const monthStart = month ? `${month}-01` : new Date().toISOString().slice(0, 8) + "01";
+  const monthStart = month ? `${month}-01` : `${todayIso().slice(0, 7)}-01`;
   const [year, monthNum] = monthStart.split("-").map(Number);
   // monthNum is 1-indexed (e.g. 8 for August); Date.UTC's month param is
   // 0-indexed, so passing it directly lands one month ahead — exactly the

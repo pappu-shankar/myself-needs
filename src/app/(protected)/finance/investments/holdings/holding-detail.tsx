@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { todayIso } from "@/lib/dates";
 import {
   addCashFlowAction,
   type AddCashFlowState,
@@ -77,12 +78,7 @@ function CashFlowSection({ holdingId, cashFlows }: { holdingId: number; cashFlow
       <form action={formAction} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-4">
         <input type="hidden" name="holdingId" value={holdingId} />
         <FormField label="Date" htmlFor={`cf-date-${holdingId}`}>
-          <Input
-            type="date"
-            name="date"
-            required
-            defaultValue={new Date().toISOString().slice(0, 10)}
-          />
+          <Input type="date" name="date" required defaultValue={todayIso()} />
         </FormField>
         <FormField
           label="Amount"
@@ -178,12 +174,7 @@ function ValuationSection({
       <form action={formAction} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
         <input type="hidden" name="holdingId" value={holdingId} />
         <FormField label="Date" htmlFor={`val-date-${holdingId}`}>
-          <Input
-            type="date"
-            name="date"
-            required
-            defaultValue={new Date().toISOString().slice(0, 10)}
-          />
+          <Input type="date" name="date" required defaultValue={todayIso()} />
         </FormField>
         <FormField label="Price / unit" htmlFor={`val-price-${holdingId}`}>
           <Input type="number" step="any" name="pricePerUnit" required className="tabular-nums" />

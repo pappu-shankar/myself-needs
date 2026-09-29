@@ -5,6 +5,7 @@ import {
   updateOpeningRow,
   type NewOpening,
 } from "../db/queries/openings";
+import { requireUpdated } from "./guards";
 
 export function getOpeningsForRoom(roomId: number) {
   return listOpeningsForRoom(roomId);
@@ -19,5 +20,5 @@ export function createOpening(entry: NewOpening) {
 }
 
 export function updateOpening(id: number, entry: Partial<NewOpening>) {
-  return updateOpeningRow(id, entry);
+  return requireUpdated(updateOpeningRow(id, entry), "opening");
 }

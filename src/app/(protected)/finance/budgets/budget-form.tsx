@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { todayIso } from "@/lib/dates";
 import { addBudgetAction, type AddBudgetState } from "@/modules/finance/actions/domain/budgets";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +56,7 @@ export function BudgetForm({ categories, onSuccess }: BudgetFormProps) {
           name="effectiveFrom"
           id="effectiveFrom"
           required
-          defaultValue={new Date().toISOString().slice(0, 10)}
+          defaultValue={todayIso()}
         />
       </FormField>
       <FormFieldAction label="Add budget">

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createInsurancePolicy } from "../../service/domain/insurance";
 import { INSURANCE_TYPES, RECURRING_FREQUENCIES } from "../../types";
 
@@ -29,6 +30,7 @@ export async function addInsurancePolicyAction(
   _prevState: AddInsurancePolicyState,
   formData: FormData,
 ): Promise<AddInsurancePolicyState> {
+  await requireUnlocked();
   const parsed = insurancePolicySchema.safeParse({
     type: formData.get("type"),
     provider: formData.get("provider"),

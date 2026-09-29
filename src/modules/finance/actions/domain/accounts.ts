@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createAccount } from "../../service/domain/accounts";
 import { ACCOUNT_TYPES } from "../../types";
 
@@ -26,6 +27,7 @@ export async function addAccountAction(
   _prevState: AddAccountState,
   formData: FormData,
 ): Promise<AddAccountState> {
+  await requireUnlocked();
   const parsed = accountSchema.safeParse({
     name: formData.get("name"),
     type: formData.get("type"),

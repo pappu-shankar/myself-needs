@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
+import { todayIso } from "@/lib/dates";
 import { getMedications, getTodaysMedications } from "@/modules/mental";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +11,10 @@ export const metadata: Metadata = {
   title: "Mental — Personal Life OS",
 };
 
-export default function MentalPage() {
+export default async function MentalPage() {
+  await requireUnlocked();
   const medications = getMedications();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const todaysMedications = getTodaysMedications(today);
 
   return (

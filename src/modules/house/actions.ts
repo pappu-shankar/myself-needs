@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createProject, updateProject } from "./service/projects";
 import { createFloor, updateFloor } from "./service/floors";
 import { createRoom, updateRoom } from "./service/rooms";
@@ -50,6 +51,7 @@ export async function addProjectAction(
   _prevState: AddProjectState,
   formData: FormData,
 ): Promise<AddProjectState> {
+  await requireUnlocked();
   const parsed = parseProjectForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid project" };
 
@@ -68,6 +70,7 @@ export async function updateProjectAction(
   _prevState: AddProjectState,
   formData: FormData,
 ): Promise<AddProjectState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid project" };
 
@@ -109,6 +112,7 @@ export async function addFloorAction(
   _prevState: AddFloorState,
   formData: FormData,
 ): Promise<AddFloorState> {
+  await requireUnlocked();
   const parsed = parseFloorForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid floor" };
 
@@ -121,6 +125,7 @@ export async function updateFloorAction(
   _prevState: AddFloorState,
   formData: FormData,
 ): Promise<AddFloorState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid floor" };
 
@@ -172,6 +177,7 @@ export async function addRoomAction(
   _prevState: AddRoomState,
   formData: FormData,
 ): Promise<AddRoomState> {
+  await requireUnlocked();
   const parsed = parseRoomForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid room" };
 
@@ -197,6 +203,7 @@ export async function updateRoomAction(
   _prevState: AddRoomState,
   formData: FormData,
 ): Promise<AddRoomState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid room" };
 
@@ -268,6 +275,7 @@ export async function addOpeningAction(
   _prevState: AddOpeningState,
   formData: FormData,
 ): Promise<AddOpeningState> {
+  await requireUnlocked();
   const parsed = parseOpeningForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid opening" };
 
@@ -291,6 +299,7 @@ export async function updateOpeningAction(
   _prevState: AddOpeningState,
   formData: FormData,
 ): Promise<AddOpeningState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid opening" };
 
@@ -353,6 +362,7 @@ export async function addStairAction(
   _prevState: AddStairState,
   formData: FormData,
 ): Promise<AddStairState> {
+  await requireUnlocked();
   const parsed = parseStairForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid stair" };
 
@@ -379,6 +389,7 @@ export async function updateStairAction(
   _prevState: AddStairState,
   formData: FormData,
 ): Promise<AddStairState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid stair" };
 
@@ -432,6 +443,7 @@ export async function addFixtureAction(
   _prevState: AddFixtureState,
   formData: FormData,
 ): Promise<AddFixtureState> {
+  await requireUnlocked();
   const parsed = parseFixtureForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid fixture" };
 
@@ -452,6 +464,7 @@ export async function updateFixtureAction(
   _prevState: AddFixtureState,
   formData: FormData,
 ): Promise<AddFixtureState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid fixture" };
 
@@ -499,6 +512,7 @@ export async function addWallStyleAction(
   _prevState: AddWallStyleState,
   formData: FormData,
 ): Promise<AddWallStyleState> {
+  await requireUnlocked();
   const parsed = parseWallStyleForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid wall style" };
 
@@ -519,6 +533,7 @@ export async function updateWallStyleAction(
   _prevState: AddWallStyleState,
   formData: FormData,
 ): Promise<AddWallStyleState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid wall style" };
 
@@ -580,6 +595,7 @@ export async function addFurnitureAction(
   _prevState: AddFurnitureState,
   formData: FormData,
 ): Promise<AddFurnitureState> {
+  await requireUnlocked();
   const parsed = parseFurnitureForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid furniture" };
 
@@ -606,6 +622,7 @@ export async function updateFurnitureAction(
   _prevState: AddFurnitureState,
   formData: FormData,
 ): Promise<AddFurnitureState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid furniture" };
 
@@ -665,6 +682,7 @@ export async function addLightFixtureAction(
   _prevState: AddLightFixtureState,
   formData: FormData,
 ): Promise<AddLightFixtureState> {
+  await requireUnlocked();
   const parsed = parseLightFixtureForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid light fixture" };
 
@@ -688,6 +706,7 @@ export async function updateLightFixtureAction(
   _prevState: AddLightFixtureState,
   formData: FormData,
 ): Promise<AddLightFixtureState> {
+  await requireUnlocked();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { error: "Invalid light fixture" };
 

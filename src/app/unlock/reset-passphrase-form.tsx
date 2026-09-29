@@ -3,7 +3,7 @@
 import type { ResetPassphraseState } from "@/modules/core/session/actions";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
-import { PassphraseInput } from "./passphrase-input";
+import { PassphraseInput } from "@/components/ui/passphrase-input";
 
 export function ResetPassphraseForm({
   recoveryKey,

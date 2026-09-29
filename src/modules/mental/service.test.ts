@@ -32,6 +32,10 @@ describe("mental service", () => {
     expect(logs[0]).toMatchObject({ medicationId: medication.id, date: "2026-08-24" });
   });
 
+  it("rejects orphaned dose logs", () => {
+    expect(() => logMedicationDose(999, "2026-08-24")).toThrow("no longer exists");
+  });
+
   it("includes only medications active on the given date", () => {
     createMedication({ name: "Ended", startDate: "2026-01-01", endDate: "2026-06-01" });
     createMedication({ name: "Ongoing", startDate: "2026-01-01" });

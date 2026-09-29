@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,8 @@ export const metadata: Metadata = {
   title: "CAGR Calculator — Personal Life OS",
 };
 
-export default function CagrCalculatorPage() {
+export default async function CagrCalculatorPage() {
+  await requireUnlocked();
   return (
     <>
       <PageHeader

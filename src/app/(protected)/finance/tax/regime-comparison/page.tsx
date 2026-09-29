@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getRegimeComparison } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,7 +14,8 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function RegimeComparisonPage() {
+export default async function RegimeComparisonPage() {
+  await requireUnlocked();
   const regime = getRegimeComparison();
 
   return (

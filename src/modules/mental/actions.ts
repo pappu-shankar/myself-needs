@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createMedication, logMedicationDose } from "./service";
 
 const medicationSchema = z.object({
@@ -21,6 +22,7 @@ export async function addMedicationAction(
   _prevState: AddMedicationState,
   formData: FormData,
 ): Promise<AddMedicationState> {
+  await requireUnlocked();
   const parsed = medicationSchema.safeParse({
     name: formData.get("name"),
     dosage: formData.get("dosage") || undefined,
@@ -61,6 +63,7 @@ export async function logDoseAction(
   _prevState: LogDoseState,
   formData: FormData,
 ): Promise<LogDoseState> {
+  await requireUnlocked();
   const parsed = logDoseSchema.safeParse({
     medicationId: formData.get("medicationId"),
     date: formData.get("date"),

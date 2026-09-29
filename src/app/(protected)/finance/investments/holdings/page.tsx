@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import {
   getAccounts,
@@ -20,7 +21,8 @@ export const metadata: Metadata = {
   title: "Holdings — Investments — Personal Life OS",
 };
 
-export default function HoldingsPage() {
+export default async function HoldingsPage() {
+  await requireUnlocked();
   const accounts = getAccounts();
   const schemeTemplates = getSchemeTemplates();
   const holdings = getHoldingsWithValue();

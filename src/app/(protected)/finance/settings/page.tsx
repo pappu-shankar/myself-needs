@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import {
   getFinanceSettings,
@@ -19,7 +20,8 @@ export const metadata: Metadata = {
   title: "Finance settings — Personal Life OS",
 };
 
-export default function FinanceSettingsPage() {
+export default async function FinanceSettingsPage() {
+  await requireUnlocked();
   const financeSettings = getFinanceSettings();
   const allocationTargets = getAllocationReport();
   const taxSettings = getTaxSettingsView();

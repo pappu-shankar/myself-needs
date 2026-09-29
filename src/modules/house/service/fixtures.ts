@@ -5,6 +5,7 @@ import {
   updateFixtureRow,
   type NewFixture,
 } from "../db/queries/fixtures";
+import { requireUpdated } from "./guards";
 
 export function getFixturesForFloor(floorId: number) {
   return listFixturesForFloor(floorId);
@@ -19,5 +20,5 @@ export function createFixture(entry: NewFixture) {
 }
 
 export function updateFixture(id: number, entry: Partial<NewFixture>) {
-  return updateFixtureRow(id, entry);
+  return requireUpdated(updateFixtureRow(id, entry), "fixture");
 }

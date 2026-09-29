@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import {
   getAccounts,
   getCategories,
@@ -92,7 +93,8 @@ const NAV_ITEMS = [
   },
 ] as const;
 
-export default function FinancePage() {
+export default async function FinancePage() {
+  await requireUnlocked();
   const accounts = getAccounts();
   const categories = getCategories();
   const { total } = getTransactionsPage(0);

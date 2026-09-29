@@ -22,8 +22,8 @@ The app is started manually per session (`pnpm dev`/`pnpm start`) — no backgro
 | Indexes | On every column used for filtering/sorting at scale |
 | Virtualized tables | Shared `DataTable` (TanStack Table + Virtual) — only visible rows mount, even at tens of thousands of rows |
 | Heavy JS computation | Runs in a Node `worker_thread` if it ever comes up, so it can't block the server |
-| Heavy client bundles | Loaded via `next/dynamic` (chart library, Motion) — never in the initial bundle for pages that don't use them |
+| Heavy client bundles | Loaded via `next/dynamic` (charts, the 3D house viewer, MediaPipe) — never in the initial bundle for pages that don't use them |
 
 ## Animation
 
-Motion, used for chart entrance animations, section/page transitions, progress rings (e.g. goal-completion ring in `plans`). Loaded via `next/dynamic`. Always respects `prefers-reduced-motion`. No video pipeline — the only identified need is UI motion, not media playback.
+CSS transitions only (Tailwind + `tw-animate-css`) — no animation library ships in the bundle. Every animation must be disabled under `prefers-reduced-motion`. No video pipeline — the only identified need is UI motion, not media playback.

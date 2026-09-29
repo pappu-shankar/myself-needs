@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getAccounts, getCategories, getTransactionsPage } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,6 +16,7 @@ export default async function TransactionsPage({
 }: {
   searchParams: Promise<{ accountId?: string }>;
 }) {
+  await requireUnlocked();
   const { accountId: accountIdParam } = await searchParams;
   const accountId = accountIdParam ? Number(accountIdParam) : undefined;
 

@@ -59,6 +59,7 @@ export function DataTable<TData extends RowData>({
   const table = useTable({ features: dataTableFeatures, columns, data });
   const rows = table.getRowModel().rows;
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,

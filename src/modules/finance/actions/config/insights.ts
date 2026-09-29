@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { setInsightsSettings } from "../../service/config/insights-settings";
 
 const settingsSchema = z.object({
@@ -21,6 +22,7 @@ export async function updateInsightsSettingsAction(
   _prevState: UpdateInsightsSettingsState,
   formData: FormData,
 ): Promise<UpdateInsightsSettingsState> {
+  await requireUnlocked();
   const parsed = settingsSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid settings" };

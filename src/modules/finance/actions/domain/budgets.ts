@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createBudget } from "../../service/domain/budgets";
 
 const budgetSchema = z.object({
@@ -18,6 +19,7 @@ export async function addBudgetAction(
   _prevState: AddBudgetState,
   formData: FormData,
 ): Promise<AddBudgetState> {
+  await requireUnlocked();
   const parsed = budgetSchema.safeParse({
     categoryId: formData.get("categoryId"),
     monthlyLimit: formData.get("monthlyLimit"),

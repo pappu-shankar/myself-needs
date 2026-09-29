@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { get80cUtilization, get80dUtilization } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,7 +14,8 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function TaxDeductionsPage() {
+export default async function TaxDeductionsPage() {
+  await requireUnlocked();
   const eightyC = get80cUtilization();
   const eightyD = get80dUtilization();
 

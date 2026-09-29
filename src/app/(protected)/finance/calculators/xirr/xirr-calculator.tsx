@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { todayIso } from "@/lib/dates";
 import { computeXirr } from "@/modules/finance/service/utility/returns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ function newRow(id: string, date: string, amount: number): Row {
 
 export function XirrCalculator() {
   const idBase = useId();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const [rows, setRows] = useState<Row[]>([
     newRow(`${idBase}-1`, today, -100000),
     newRow(`${idBase}-2`, today, 130000),

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import {
   getProjects,
   getFloorsForProject,
@@ -20,7 +21,8 @@ export const metadata: Metadata = {
   title: "House — Personal Life OS",
 };
 
-export default function HousePage() {
+export default async function HousePage() {
+  await requireUnlocked();
   const projects = getProjects();
 
   const floorsByProject = Object.fromEntries(

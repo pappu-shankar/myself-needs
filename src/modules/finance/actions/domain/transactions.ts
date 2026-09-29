@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createTransaction } from "../../service/domain/transactions";
 import { TRANSACTION_TYPES } from "../../types";
 
@@ -36,6 +37,7 @@ export async function addTransactionAction(
   _prevState: AddTransactionState,
   formData: FormData,
 ): Promise<AddTransactionState> {
+  await requireUnlocked();
   const parsed = transactionSchema.safeParse({
     type: formData.get("type"),
     accountId: formData.get("accountId"),

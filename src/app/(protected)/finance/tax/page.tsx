@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getCurrentFinancialYear } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
   title: "Tax planning — Personal Life OS",
 };
 
-export default function TaxPlanningPage() {
+export default async function TaxPlanningPage() {
+  await requireUnlocked();
   const fy = getCurrentFinancialYear();
 
   return (

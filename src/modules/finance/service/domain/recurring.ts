@@ -7,6 +7,8 @@ import {
   type NewRecurringRule,
 } from "../../db/queries/domain/recurring";
 import type { RecurringFrequency } from "../../types";
+import { todayIso } from "@/lib/dates";
+import { DomainError } from "@/modules/core/errors";
 
 export function createRecurringRule(entry: NewRecurringRule) {
   return insertRecurringRule(entry);
@@ -97,7 +99,7 @@ export interface DueRecurringItem {
  * this is only surfaced when the finance section is open. See
  * docs/prd/finance/recurring-transactions.md.
  */
-export function getDueWorklist(today = new Date().toISOString().slice(0, 10)): DueRecurringItem[] {
+export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
   const rules = listRecurringRules();
   const items: DueRecurringItem[] = [];
 
@@ -139,7 +141,7 @@ export interface ConfirmRecurringInput {
 /** Creates the real transaction for one confirmed due period, tagged so it counts against the rule going forward. */
 export function confirmRecurringOccurrence(input: ConfirmRecurringInput) {
   const rule = getRecurringRuleById(input.ruleId);
-  if (!rule) throw new Error("Recurring rule not found");
+  if (!rule) throw new DomainError("Recurring rule not found");
 
   return createTransaction({
     type: rule.type,

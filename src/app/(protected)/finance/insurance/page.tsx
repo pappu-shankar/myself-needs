@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
+import { todayIso } from "@/lib/dates";
 import Link from "next/link";
 import { getRecurringRules, getInsurancePolicies } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -23,10 +25,11 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function InsurancePage() {
+export default async function InsurancePage() {
+  await requireUnlocked();
   const recurringRules = getRecurringRules();
   const insurancePolicies = getInsurancePolicies();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   return (
     <>

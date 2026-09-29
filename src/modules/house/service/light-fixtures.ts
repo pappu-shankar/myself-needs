@@ -5,6 +5,7 @@ import {
   updateLightFixtureRow,
   type NewLightFixture,
 } from "../db/queries/light-fixtures";
+import { requireUpdated } from "./guards";
 
 export function getLightFixturesForRoom(roomId: number) {
   return listLightFixturesForRoom(roomId);
@@ -19,5 +20,5 @@ export function createLightFixture(entry: NewLightFixture) {
 }
 
 export function updateLightFixture(id: number, entry: Partial<NewLightFixture>) {
-  return updateLightFixtureRow(id, entry);
+  return requireUpdated(updateLightFixtureRow(id, entry), "light fixture");
 }

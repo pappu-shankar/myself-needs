@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getDataDir } from "@/modules/core/env/paths";
 import {
@@ -10,6 +10,7 @@ import {
   updatePhotoRow,
 } from "../db/queries/photos";
 import type { PhotoMimeType } from "../types";
+import { DomainError } from "@/modules/core/errors";
 
 const PHOTOS_SUBDIR = "fashion-photos";
 
@@ -59,19 +60,36 @@ export interface UploadedPhotoInput {
  * inserts the DB row referencing it. The UUID is generated before the
  * insert so the filename never depends on the not-yet-known row id. */
 export function createPhoto(input: UploadedPhotoInput) {
+  if (input.bytes.length === 0) throw new DomainError("Photo data is empty.");
+  if (
+    !Number.isInteger(input.widthPx) ||
+    input.widthPx <= 0 ||
+    !Number.isInteger(input.heightPx) ||
+    input.heightPx <= 0
+  ) {
+    throw new DomainError("Photo dimensions must be positive integers.");
+  }
   const filename = `${randomUUID()}${mimeTypeToExtension(input.mimeType)}`;
-  writeFileSync(resolvePhotoFilePath(filename), input.bytes);
-
-  return insertPhoto({
-    filename,
-    originalName: input.originalName,
-    mimeType: input.mimeType,
-    widthPx: input.widthPx,
-    heightPx: input.heightPx,
-  });
+  const filePath = resolvePhotoFilePath(filename);
+  writeFileSync(filePath, input.bytes);
+  try {
+    return insertPhoto({
+      filename,
+      originalName: input.originalName,
+      mimeType: input.mimeType,
+      widthPx: input.widthPx,
+      heightPx: input.heightPx,
+    });
+  } catch (error) {
+    unlinkSync(filePath);
+    throw error;
+  }
 }
 
 export function updateSkinTone(id: number, lab: { l: number; a: number; b: number }) {
+  if (!getPhotoByIdRow(id)) throw new DomainError("The photo no longer exists.");
+  if (![lab.l, lab.a, lab.b].every(Number.isFinite))
+    throw new DomainError("Skin tone values must be numbers.");
   return updatePhotoRow(id, { skinToneLabL: lab.l, skinToneLabA: lab.a, skinToneLabB: lab.b });
 }
 

@@ -15,6 +15,15 @@ describe("health metrics service", () => {
     expect(metrics[0]).toMatchObject({ type: "weight", label: "Weight", value: 70 });
   });
 
+  it("rejects invalid dates and negative values", () => {
+    expect(() =>
+      createMetric({ type: "weight", date: "2026-02-30", label: "Weight", value: 70 }),
+    ).toThrow("calendar date");
+    expect(() =>
+      createMetric({ type: "weight", date: "2026-08-01", label: "Weight", value: -1 }),
+    ).toThrow("non-negative");
+  });
+
   it("lists metrics newest first", () => {
     createMetric({ type: "weight", date: "2026-08-01", label: "Weight", value: 70, unit: "kg" });
     createMetric({ type: "weight", date: "2026-08-05", label: "Weight", value: 69, unit: "kg" });

@@ -5,6 +5,7 @@ import {
   updateProjectRow,
   type NewProject,
 } from "../db/queries/projects";
+import { requireUpdated } from "./guards";
 
 export function getProjects() {
   return listProjects();
@@ -19,5 +20,5 @@ export function createProject(entry: NewProject) {
 }
 
 export function updateProject(id: number, entry: Partial<NewProject>) {
-  return updateProjectRow(id, entry);
+  return requireUpdated(updateProjectRow(id, entry), "project");
 }

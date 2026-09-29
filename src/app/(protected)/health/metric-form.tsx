@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { todayIso } from "@/lib/dates";
 import { addMetricAction, type AddMetricState } from "@/modules/health/actions/metrics";
 import { HEALTH_METRIC_TYPES, DEFAULT_UNITS, type HealthMetricType } from "@/modules/health/types";
 import { Button } from "@/components/ui/button";
@@ -48,13 +49,7 @@ export function MetricForm() {
       )}
 
       <FormField label="Date" htmlFor="metricDate">
-        <Input
-          type="date"
-          name="date"
-          id="metricDate"
-          required
-          defaultValue={new Date().toISOString().slice(0, 10)}
-        />
+        <Input type="date" name="date" id="metricDate" required defaultValue={todayIso()} />
       </FormField>
       <FormField
         label={`Value${DEFAULT_UNITS[type] ? ` (${DEFAULT_UNITS[type]})` : ""}`}

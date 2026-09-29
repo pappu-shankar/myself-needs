@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { todayIso } from "@/lib/dates";
 import {
   addTransactionAction,
   type AddTransactionState,
@@ -99,12 +100,7 @@ export function TransactionForm({ accounts, categories, onSuccess }: Transaction
         <Input type="number" step="any" name="amount" required className="tabular-nums" />
       </FormField>
       <FormField label="Date" htmlFor="date">
-        <Input
-          type="date"
-          name="date"
-          required
-          defaultValue={new Date().toISOString().slice(0, 10)}
-        />
+        <Input type="date" name="date" required defaultValue={todayIso()} />
       </FormField>
       <FormField label="Note" htmlFor="note">
         <Input type="text" name="note" />

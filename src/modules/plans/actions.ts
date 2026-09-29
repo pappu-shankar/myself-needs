@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createGoal, setGoalProgress } from "./service";
 import { GOAL_TYPES, GOAL_PRIORITIES } from "./types";
 
@@ -22,6 +23,7 @@ export async function addGoalAction(
   _prevState: AddGoalState,
   formData: FormData,
 ): Promise<AddGoalState> {
+  await requireUnlocked();
   const parsed = goalSchema.safeParse({
     name: formData.get("name"),
     type: formData.get("type"),
@@ -63,6 +65,7 @@ export async function updateGoalProgressAction(
   _prevState: UpdateGoalProgressState,
   formData: FormData,
 ): Promise<UpdateGoalProgressState> {
+  await requireUnlocked();
   const parsed = progressSchema.safeParse({
     id: formData.get("id"),
     progressPercent: formData.get("progressPercent"),

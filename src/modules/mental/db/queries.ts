@@ -24,6 +24,10 @@ export function listAllMedications() {
   return getDb().select().from(medications).orderBy(medications.name).all();
 }
 
+export function getMedicationByIdRow(id: number) {
+  return getDb().select().from(medications).where(eq(medications.id, id)).get();
+}
+
 export function insertMedication(entry: NewMedication) {
   return getDb().insert(medications).values(entry).returning().get();
 }

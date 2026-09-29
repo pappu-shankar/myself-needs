@@ -30,6 +30,42 @@ describe("transactions service", () => {
     });
   });
 
+  it("rejects transaction states that violate finance invariants", () => {
+    const checking = createAccount({ name: "Checking", type: "checking" });
+    const savings = createAccount({ name: "Savings", type: "savings" });
+    const income = createCategory({ name: "Salary", type: "income" });
+    const expense = createCategory({ name: "Groceries", type: "expense" });
+
+    expect(() =>
+      createTransaction({
+        type: "expense",
+        accountId: checking.id,
+        categoryId: income.id,
+        amount: 10,
+        date: "2026-02-01",
+      }),
+    ).toThrow("category does not match");
+    expect(() =>
+      createTransaction({
+        type: "transfer",
+        accountId: checking.id,
+        toAccountId: savings.id,
+        categoryId: expense.id,
+        amount: 10,
+        date: "2026-02-01",
+      }),
+    ).toThrow("Transfers cannot have a category");
+    expect(() =>
+      createTransaction({
+        type: "expense",
+        accountId: checking.id,
+        categoryId: expense.id,
+        amount: 10,
+        date: "2026-02-31",
+      }),
+    ).toThrow("valid calendar date");
+  });
+
   it("joins account, transfer destination account, and category names for a page of transactions", () => {
     const checking = createAccount({ name: "Checking", type: "checking" });
     const savings = createAccount({ name: "Savings", type: "savings" });
@@ -95,6 +131,7 @@ describe("transactions service", () => {
     const savings = createAccount({ name: "Savings", type: "savings" });
     const dad = createAccount({ name: "Accounts receivable — Dad", type: "receivable" });
     const groceries = createCategory({ name: "Groceries", type: "expense" });
+    const repayment = createCategory({ name: "Repayment", type: "income" });
 
     createTransaction({
       type: "expense",
@@ -113,7 +150,7 @@ describe("transactions service", () => {
     createTransaction({
       type: "income",
       accountId: dad.id,
-      categoryId: groceries.id,
+      categoryId: repayment.id,
       amount: 500,
       date: "2026-02-03",
     });

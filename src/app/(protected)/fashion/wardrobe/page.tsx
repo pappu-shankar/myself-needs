@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { getGarments } from "@/modules/fashion";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
   title: "Wardrobe — Personal Life OS",
 };
 
-export default function WardrobePage() {
+export default async function WardrobePage() {
+  await requireUnlocked();
   const garments = getGarments();
 
   return (

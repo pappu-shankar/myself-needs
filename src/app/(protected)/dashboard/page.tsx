@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { getTotalBalance } from "@/modules/finance";
 import { getLatestMetricSummary } from "@/modules/health";
 import { getActiveMedicationsCount } from "@/modules/mental";
 import { getActiveGoalsCount } from "@/modules/plans";
+import { todayIso } from "@/lib/dates";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -10,10 +12,11 @@ export const metadata: Metadata = {
   title: "Dashboard — Personal Life OS",
 };
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireUnlocked();
   const totalBalance = getTotalBalance();
   const latestMetric = getLatestMetricSummary();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const activeMedicationsCount = getActiveMedicationsCount(today);
   const activeGoalsCount = getActiveGoalsCount();
 

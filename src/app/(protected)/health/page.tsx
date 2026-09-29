@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
+import { todayIso } from "@/lib/dates";
 import { getMetrics, getMetricTrend, getMedications, getTodaysMedications } from "@/modules/health";
 import { HEALTH_METRIC_TYPES, type HealthMetricType } from "@/modules/health/types";
 import { PageHeader } from "@/components/ui/page-header";
@@ -21,10 +23,11 @@ export const metadata: Metadata = {
   title: "Health — Personal Life OS",
 };
 
-export default function HealthPage() {
+export default async function HealthPage() {
+  await requireUnlocked();
   const metrics = getMetrics();
   const medications = getMedications();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const todaysMedications = getTodaysMedications(today);
 
   const trendsByType = Object.fromEntries(

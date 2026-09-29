@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getHoldingsWithValue, getPortfolioXirr } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -18,7 +19,8 @@ function formatPercent(rate: number | null) {
   return rate === null ? "—" : `${(rate * 100).toFixed(1)}%`;
 }
 
-export default function InvestmentsPage() {
+export default async function InvestmentsPage() {
+  await requireUnlocked();
   const holdings = getHoldingsWithValue();
   const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
   const portfolioXirr = getPortfolioXirr();

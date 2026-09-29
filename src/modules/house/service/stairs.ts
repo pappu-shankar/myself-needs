@@ -5,6 +5,7 @@ import {
   updateStairRow,
   type NewStair,
 } from "../db/queries/stairs";
+import { requireUpdated } from "./guards";
 
 export function getStairsForProject(projectId: number) {
   return listStairsForProject(projectId);
@@ -19,5 +20,5 @@ export function createStair(entry: NewStair) {
 }
 
 export function updateStair(id: number, entry: Partial<NewStair>) {
-  return updateStairRow(id, entry);
+  return requireUpdated(updateStairRow(id, entry), "stair");
 }

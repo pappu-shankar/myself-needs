@@ -5,6 +5,7 @@ import {
   updateWallStyleRow,
   type NewWallStyle,
 } from "../db/queries/wall-styles";
+import { requireUpdated } from "./guards";
 
 export function getWallStylesForRoom(roomId: number) {
   return listWallStylesForRoom(roomId);
@@ -19,5 +20,5 @@ export function createWallStyle(entry: NewWallStyle) {
 }
 
 export function updateWallStyle(id: number, entry: Partial<NewWallStyle>) {
-  return updateWallStyleRow(id, entry);
+  return requireUpdated(updateWallStyleRow(id, entry), "wall style");
 }

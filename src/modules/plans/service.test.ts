@@ -51,4 +51,11 @@ describe("plans service", () => {
     expect(updated?.progressPercent).toBe(42);
     expect(getGoalById(created.id)?.progressPercent).toBe(42);
   });
+
+  it("rejects progress outside the valid range", () => {
+    const goal = createGoal({ name: "Habit", type: "other", priority: "important" });
+
+    expect(() => setGoalProgress(goal.id, 101)).toThrow("between 0 and 100");
+    expect(() => setGoalProgress(goal.id, -1)).toThrow("between 0 and 100");
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { todayIso } from "@/lib/dates";
 import {
   addRecurringRuleAction,
   type AddRecurringRuleState,
@@ -134,13 +135,7 @@ export function RecurringRuleForm({
       </FormField>
 
       <FormField label="Start date" htmlFor="startDate">
-        <Input
-          type="date"
-          name="startDate"
-          id="startDate"
-          required
-          defaultValue={new Date().toISOString().slice(0, 10)}
-        />
+        <Input type="date" name="startDate" id="startDate" required defaultValue={todayIso()} />
       </FormField>
       <FormField label="End date" htmlFor="endDate" hint="Optional">
         <Input type="date" name="endDate" id="endDate" />

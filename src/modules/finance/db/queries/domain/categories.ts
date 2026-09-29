@@ -17,6 +17,10 @@ export function listCategoriesByType(type: "income" | "expense") {
     .all();
 }
 
+export function getCategoryByIdRow(id: number) {
+  return getDb().select().from(categories).where(eq(categories.id, id)).get();
+}
+
 export function insertCategory(entry: NewCategory) {
   return getDb().insert(categories).values(entry).returning().get();
 }

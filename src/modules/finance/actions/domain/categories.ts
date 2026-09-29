@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createCategory } from "../../service/domain/categories";
 import { CATEGORY_TYPES } from "../../types";
 
@@ -19,6 +20,7 @@ export async function addCategoryAction(
   _prevState: AddCategoryState,
   formData: FormData,
 ): Promise<AddCategoryState> {
+  await requireUnlocked();
   const parsed = categorySchema.safeParse({
     name: formData.get("name"),
     type: formData.get("type"),

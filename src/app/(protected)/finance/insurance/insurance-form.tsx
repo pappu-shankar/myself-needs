@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { todayIso } from "@/lib/dates";
 import {
   addInsurancePolicyAction,
   type AddInsurancePolicyState,
@@ -89,7 +90,7 @@ export function InsuranceForm({ recurringRules, onSuccess }: InsuranceFormProps)
           name="startDate"
           id="insuranceStartDate"
           required
-          defaultValue={new Date().toISOString().slice(0, 10)}
+          defaultValue={todayIso()}
         />
       </FormField>
 

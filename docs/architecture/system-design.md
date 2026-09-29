@@ -30,6 +30,21 @@ modules/core/db (Drizzle client) → data/app.db (encrypted SQLite)
 | `db/queries/` | Drizzle query builders | Own module's `db/schema/`, `modules/core/db` |
 | `db/schema/` | Drizzle table definitions | Nothing else in the app |
 
+## Server Actions and pages: the enforced conventions
+
+Every Server Action is built with `defineFormAction(schema, handler)` (or `defineAction` for programmatic calls) from `src/modules/core/action/define-action.ts`. The wrapper:
+
+- requires an unlocked vault (`requireUnlocked`) before anything else runs;
+- turns FormData into an object and validates it with the Zod schema (shared field types live in `src/lib/validation.ts`);
+- runs the handler, then refreshes every page (`revalidatePath("/", "layout")`) — modules never hard-code app URLs;
+- returns an `ActionState<T>` (`{ ok, error, fieldErrors, values, data }`, `src/modules/core/action/types.ts`) instead of throwing. Services throw `DomainError` (`src/modules/core/errors.ts`) for user-facing rule violations, which is shown verbatim; SQLite constraint errors get friendly messages; anything else is logged (never with row data) and replaced by a generic message.
+
+Every protected `page.tsx` starts with `await requireUnlocked()` — a layout-level check is not a boundary in the App Router, because page segments render independently of their layout. API route handlers do the same.
+
+"Today" is always `todayIso()` from `src/lib/dates.ts` (local calendar date), never `toISOString().slice(0, 10)` (the UTC date). Amounts and percentages are formatted with `src/lib/format.ts`.
+
+These rules, plus the module-boundary rules below, are checked by `src/test/architecture.test.ts`, which runs with the rest of the suite on every commit.
+
 ## Module boundary rule
 
 Modules never import from each other directly. Each module exposes a small public surface via its own `index.ts` (types + summary/read functions other layers need); everything else is private. Cross-module composition happens only at the `app/` route layer.

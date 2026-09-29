@@ -16,6 +16,8 @@ import {
 import { UNIT_PRICED_TYPES, ACCRUAL_TYPES, type InvestmentType } from "../../types";
 import { mutualFundNavProvider } from "../utility/price-providers/mutual-fund-nav";
 import { computeXirr } from "../utility/returns";
+import { todayIso } from "@/lib/dates";
+import { DomainError } from "@/modules/core/errors";
 
 export function createHolding(entry: NewHolding) {
   return insertHolding(entry);
@@ -89,7 +91,7 @@ export function getHoldingValue(
   holding: { id: number; type: InvestmentType; units: number | null; interestRate: number | null },
   asOfDate?: string,
 ): HoldingValue {
-  const effectiveDate = asOfDate ?? new Date().toISOString().slice(0, 10);
+  const effectiveDate = asOfDate ?? todayIso();
 
   if (UNIT_PRICED_TYPES.has(holding.type)) {
     const latest = getLatestValuation(holding.id, asOfDate);
@@ -129,7 +131,7 @@ export function getTotalHoldingsValue(asOfDate: string): number {
 function withValueAndXirr<
   T extends { id: number; type: InvestmentType; units: number | null; interestRate: number | null },
 >(holdings: T[]) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   return holdings.map((holding) => {
     const value = getHoldingValue(holding);
     const cashFlows = listCashFlowsForHolding(holding.id);
@@ -153,7 +155,7 @@ export function getHoldingsByGoalId(goalId: number) {
  * docs/prd/finance/returns-analytics.md.
  */
 export function getPortfolioXirr(): number | null {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const totalValue = getHoldingsWithValue().reduce((sum, h) => sum + h.currentValue, 0);
   const allCashFlows = listAllCashFlows().map((cf) => ({ amount: cf.amount, date: cf.date }));
   return computeXirr(allCashFlows, totalValue, today);
@@ -162,10 +164,10 @@ export function getPortfolioXirr(): number | null {
 /** Fetches the latest NAV for a domestic mutual fund holding and records it as a new valuation. Manual click only — see price-providers/mutual-fund-nav.ts. */
 export async function refreshMutualFundNav(holdingId: number) {
   const holding = getHoldingById(holdingId);
-  if (!holding) throw new Error("Holding not found");
+  if (!holding) throw new DomainError("Holding not found");
   if (holding.type !== "mutual_fund_domestic")
-    throw new Error("NAV refresh is only available for domestic mutual funds");
-  if (!holding.externalCode) throw new Error("This holding has no AMFI scheme code set");
+    throw new DomainError("NAV refresh is only available for domestic mutual funds");
+  if (!holding.externalCode) throw new DomainError("This holding has no AMFI scheme code set");
 
   const quote = await mutualFundNavProvider.fetchLatestPrice(holding.externalCode);
   return insertValuation({ holdingId, date: quote.date, pricePerUnit: quote.pricePerUnit });

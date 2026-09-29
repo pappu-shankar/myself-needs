@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createPhoto, getPhoto, updateSkinTone } from "./service/photos";
 import { createOutfit, deleteOutfit } from "./service/outfits";
 import { createGarment, deleteGarment } from "./service/garments";
@@ -23,6 +24,7 @@ export async function uploadPhotoAction(
   _prevState: UploadPhotoState,
   formData: FormData,
 ): Promise<UploadPhotoState> {
+  await requireUnlocked();
   const file = formData.get("photo");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Choose a photo to upload" };
@@ -72,6 +74,7 @@ export async function updateSkinToneAction(
   _prevState: UpdateSkinToneState,
   formData: FormData,
 ): Promise<UpdateSkinToneState> {
+  await requireUnlocked();
   const parsed = skinToneSchema.safeParse({
     photoId: formData.get("photoId"),
     labL: formData.get("labL"),
@@ -106,6 +109,7 @@ export async function saveOutfitAction(
   _prevState: SaveOutfitState,
   formData: FormData,
 ): Promise<SaveOutfitState> {
+  await requireUnlocked();
   const parsed = outfitSchema.safeParse({
     photoId: formData.get("photoId"),
     name: formData.get("name"),
@@ -150,6 +154,7 @@ export async function deleteOutfitAction(
   _prevState: DeleteOutfitState,
   formData: FormData,
 ): Promise<DeleteOutfitState> {
+  await requireUnlocked();
   const parsed = deleteOutfitSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { error: "Invalid outfit" };
 
@@ -182,6 +187,7 @@ export async function uploadGarmentAction(
   _prevState: UploadGarmentState,
   formData: FormData,
 ): Promise<UploadGarmentState> {
+  await requireUnlocked();
   const file = formData.get("photo");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Choose a garment photo to upload" };
@@ -226,6 +232,7 @@ export async function deleteGarmentAction(
   _prevState: DeleteGarmentState,
   formData: FormData,
 ): Promise<DeleteGarmentState> {
+  await requireUnlocked();
   const parsed = deleteGarmentSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { error: "Invalid garment" };
 
@@ -253,6 +260,7 @@ export async function savePhysiqueAction(
   _prevState: SavePhysiqueState,
   formData: FormData,
 ): Promise<SavePhysiqueState> {
+  await requireUnlocked();
   const parsed = savePhysiqueSchema.safeParse({
     photoId: formData.get("photoId"),
     ratiosJson: formData.get("ratiosJson"),

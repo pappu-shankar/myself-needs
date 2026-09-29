@@ -100,4 +100,8 @@ describe("fashion outfits service", () => {
 
     expect(getOutfit(created.id)).toBeNull();
   });
+
+  it("rejects deleting a missing outfit", () => {
+    expect(() => deleteOutfit(999)).toThrow("no longer exists");
+  });
 });

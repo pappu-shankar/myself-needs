@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getCategoriesByType, getBudgetsForMonth } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -23,7 +24,8 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function BudgetsPage() {
+export default async function BudgetsPage() {
+  await requireUnlocked();
   const expenseCategories = getCategoriesByType("expense");
   const budgets = getBudgetsForMonth();
 

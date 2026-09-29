@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createSchemeTemplate } from "../../service/domain/scheme-templates";
 
 const schemeTemplateSchema = z.object({
@@ -19,6 +20,7 @@ export async function addSchemeTemplateAction(
   _prevState: AddSchemeTemplateState,
   formData: FormData,
 ): Promise<AddSchemeTemplateState> {
+  await requireUnlocked();
   const parsed = schemeTemplateSchema.safeParse({
     name: formData.get("name"),
     lockInMonths: formData.get("lockInMonths") || undefined,

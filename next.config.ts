@@ -3,7 +3,18 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Native Node addon — must not be bundled by webpack/Turbopack, just required
   // directly at runtime. See docs/architecture/security.md.
-  serverExternalPackages: ["better-sqlite3-multiple-ciphers", "better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3-multiple-ciphers"],
+
+  poweredByHeader: false,
+
+  experimental: {
+    serverActions: {
+      // Fashion photo/garment uploads go through Server Actions; the 1MB default
+      // rejects ordinary phone photos. Clients downscale before uploading, so this
+      // is headroom, not an invitation to send originals.
+      bodySizeLimit: "10mb",
+    },
+  },
 
   // Required for @react-three/fiber (house module's 3D viewer) — three.js ships
   // untranspiled ESM that Next.js needs to run through its own build pipeline.

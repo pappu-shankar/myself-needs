@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import { createMetric } from "../service/metrics";
 import { HEALTH_METRIC_TYPES, DEFAULT_UNITS } from "../types";
 
@@ -28,6 +29,7 @@ export async function addMetricAction(
   _prevState: AddMetricState,
   formData: FormData,
 ): Promise<AddMetricState> {
+  await requireUnlocked();
   const parsed = metricSchema.safeParse({
     type: formData.get("type"),
     date: formData.get("date"),

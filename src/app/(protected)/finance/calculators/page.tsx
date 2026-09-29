@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,8 @@ export const metadata: Metadata = {
  * and real numbers are never computed two different ways. See
  * docs/prd/finance/calculators.md.
  */
-export default function CalculatorsPage() {
+export default async function CalculatorsPage() {
+  await requireUnlocked();
   return (
     <>
       <PageHeader

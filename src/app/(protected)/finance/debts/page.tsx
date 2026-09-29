@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUnlocked } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getAccounts } from "@/modules/finance";
 import { getCreditUtilization } from "@/modules/finance/service/utility/loans";
@@ -24,7 +25,8 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function DebtsPage() {
+export default async function DebtsPage() {
+  await requireUnlocked();
   const accounts = getAccounts();
   const creditCards = accounts.filter((a) => a.type === "credit_card");
   const loans = accounts.filter((a) => a.type === "loan");

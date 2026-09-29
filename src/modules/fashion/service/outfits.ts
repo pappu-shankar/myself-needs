@@ -5,6 +5,7 @@ import {
   listOutfitsForPhoto,
   type NewOutfit,
 } from "../db/queries/outfits";
+import { DomainError } from "@/modules/core/errors";
 
 export function getOutfitsForPhoto(photoId: number) {
   return listOutfitsForPhoto(photoId);
@@ -19,5 +20,6 @@ export function createOutfit(entry: NewOutfit) {
 }
 
 export function deleteOutfit(id: number) {
+  if (!getOutfitByIdRow(id)) throw new DomainError("The outfit no longer exists.");
   deleteOutfitRow(id);
 }
