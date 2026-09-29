@@ -169,6 +169,13 @@
       "when": 1790673118709,
       "tag": "0023_common_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1790673252134,
+      "tag": "0024_phase2_finance_integrity",
+      "breakpoints": true
     }
   ]
 }

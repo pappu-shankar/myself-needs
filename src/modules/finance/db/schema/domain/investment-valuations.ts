@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { investmentHoldings } from "./investment-holdings";
 
@@ -23,6 +23,6 @@ export const investmentValuations = sqliteTable(
       .default(sql`(current_timestamp)`),
   },
   (table) => [
-    index("finance_investment_valuations_holding_date_idx").on(table.holdingId, table.date),
+    uniqueIndex("finance_investment_valuations_holding_date_idx").on(table.holdingId, table.date),
   ],
 );

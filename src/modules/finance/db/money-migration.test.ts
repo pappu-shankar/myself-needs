@@ -45,6 +45,14 @@ describe("REAL rupees → INTEGER paise migration", () => {
     insertTx.run("expense", 1, null, 0.1, "2026-01-01");
     insertTx.run("expense", 1, null, 0.2, "2026-01-02");
     insertTx.run("transfer", 2, 1, 99.99, "2026-01-03");
+    connection
+      .prepare("INSERT INTO finance_categories (id, name, type) VALUES (1, 'Food', 'expense')")
+      .run();
+    const insertBudget = connection.prepare(
+      "INSERT INTO finance_budgets (id, category_id, monthly_limit, effective_from) VALUES (?, 1, ?, '2026-01-01')",
+    );
+    insertBudget.run(1, 5000);
+    insertBudget.run(2, 6000.5);
 
     // Same as openDatabase: foreign keys off during the table rebuilds, verified after.
     connection.pragma("foreign_keys = OFF");
@@ -65,6 +73,11 @@ describe("REAL rupees → INTEGER paise migration", () => {
       { amount: 10, t: "integer" },
       { amount: 20, t: "integer" },
       { amount: 9999, t: "integer" },
+    ]);
+
+    // Duplicate budgets (same category + start) collapse to the newest instead of failing the upgrade.
+    expect(connection.prepare("SELECT id, monthly_limit FROM finance_budgets").all()).toEqual([
+      { id: 2, monthly_limit: 600050 },
     ]);
 
     attachDatabase(connection);

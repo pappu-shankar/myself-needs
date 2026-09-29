@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { categories } from "./categories";
@@ -24,6 +24,6 @@ export const budgets = sqliteTable(
       .default(sql`(current_timestamp)`),
   },
   (table) => [
-    index("finance_budgets_category_effective_idx").on(table.categoryId, table.effectiveFrom),
+    uniqueIndex("finance_budgets_category_effective_idx").on(table.categoryId, table.effectiveFrom),
   ],
 );

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
@@ -27,6 +27,10 @@ export const transactions = sqliteTable(
      * due item — see service/recurring.ts. Null for every manually-entered
      * transaction. */
     recurringRuleId: integer("recurring_rule_id").references(() => recurringRules.id),
+    /** For recurring-generated transactions: the due date (YYYY-MM-DD) of the
+     * period this transaction settles. Unique per rule, so confirming the same
+     * period twice (double submit, two tabs) can't double-post. */
+    periodStart: text("period_start"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),
@@ -35,5 +39,10 @@ export const transactions = sqliteTable(
     index("finance_transactions_account_date_idx").on(table.accountId, table.date),
     index("finance_transactions_category_date_idx").on(table.categoryId, table.date),
     index("finance_transactions_recurring_rule_idx").on(table.recurringRuleId),
+    uniqueIndex("finance_transactions_rule_period_idx")
+      .on(table.recurringRuleId, table.periodStart)
+      .where(sql`${table.recurringRuleId} IS NOT NULL AND ${table.periodStart} IS NOT NULL`),
+    index("finance_transactions_to_account_date_idx").on(table.toAccountId, table.date),
+    index("finance_transactions_date_idx").on(table.date),
   ],
 );
