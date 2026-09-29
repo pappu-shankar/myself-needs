@@ -1,14 +1,11 @@
-import { listAccounts, getAccountBalance } from "../../db/queries/domain/accounts";
+import { listAccounts, getAccountsTotal } from "../../db/queries/domain/accounts";
+import { addDays, addMonths, monthKey, startOfMonth, todayIso } from "@/lib/dates";
 import { getTotalHoldingsValue } from "./investments";
 
 export interface NetWorthPoint {
   /** YYYY-MM */
   month: string;
   netWorth: number;
-}
-
-function lastDayOfMonth(year: number, month1: number): string {
-  return new Date(Date.UTC(year, month1, 0)).toISOString().slice(0, 10);
 }
 
 /**
@@ -20,22 +17,18 @@ function lastDayOfMonth(year: number, month1: number): string {
  * out entirely, same as `getTotalBalance`. See docs/prd/finance/net-worth.md.
  */
 export function getNetWorthTrend(months = 12): NetWorthPoint[] {
-  const accounts = listAccounts().filter((a) => !a.excludeFromNetWorth);
-  const today = new Date();
+  const accountIds = listAccounts()
+    .filter((a) => !a.excludeFromNetWorth)
+    .map((a) => a.id);
+  const today = todayIso();
   const points: NetWorthPoint[] = [];
 
   for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i, 1));
-    const year = d.getUTCFullYear();
-    const month1 = d.getUTCMonth() + 1;
-    const asOfDate = i === 0 ? today.toISOString().slice(0, 10) : lastDayOfMonth(year, month1);
-
-    const accountsTotal = accounts.reduce((sum, a) => sum + getAccountBalance(a.id, asOfDate), 0);
-    const holdingsTotal = getTotalHoldingsValue(asOfDate);
-
+    const monthStart = addMonths(startOfMonth(today), -i);
+    const asOfDate = i === 0 ? today : addDays(addMonths(monthStart, 1), -1);
     points.push({
-      month: `${year}-${String(month1).padStart(2, "0")}`,
-      netWorth: accountsTotal + holdingsTotal,
+      month: monthKey(monthStart),
+      netWorth: getAccountsTotal(accountIds, asOfDate) + getTotalHoldingsValue(asOfDate),
     });
   }
 

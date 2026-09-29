@@ -1,5 +1,6 @@
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
+import { paiseToRupees } from "../../schema/money";
 import { transactions } from "../../schema/domain/transactions";
 import { categories } from "../../schema/domain/categories";
 
@@ -17,8 +18,14 @@ export function getMonthlyIncomeExpense(
   return getDb()
     .select({
       month: sql<string>`substr(${transactions.date}, 1, 7)`,
-      income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'income' THEN ${transactions.amount} ELSE 0 END), 0)`,
-      expense: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'expense' THEN ${transactions.amount} ELSE 0 END), 0)`,
+      income:
+        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'income' THEN ${transactions.amount} ELSE 0 END), 0)`.mapWith(
+          paiseToRupees,
+        ),
+      expense:
+        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'expense' THEN ${transactions.amount} ELSE 0 END), 0)`.mapWith(
+          paiseToRupees,
+        ),
     })
     .from(transactions)
     .where(and(gte(transactions.date, startDate), lt(transactions.date, endDate)))
@@ -38,7 +45,7 @@ export function getExpenseByCategory(startDate: string, endDate: string): Catego
     .select({
       categoryId: categories.id,
       categoryName: categories.name,
-      total: sql<number>`SUM(${transactions.amount})`,
+      total: sql<number>`SUM(${transactions.amount})`.mapWith(paiseToRupees),
     })
     .from(transactions)
     .innerJoin(categories, eq(transactions.categoryId, categories.id))

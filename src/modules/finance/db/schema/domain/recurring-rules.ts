@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
@@ -18,7 +19,7 @@ export const recurringRules = sqliteTable("finance_recurring_rules", {
     .references(() => accounts.id),
   toAccountId: integer("to_account_id").references(() => accounts.id),
   categoryId: integer("category_id").references(() => categories.id),
-  amount: real("amount").notNull(),
+  amount: money("amount").notNull(),
   frequency: text("frequency", {
     enum: ["weekly", "monthly", "quarterly", "half_yearly", "yearly"],
   }).notNull(),

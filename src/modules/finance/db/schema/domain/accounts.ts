@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 
 /**
@@ -11,17 +12,17 @@ export const accounts = sqliteTable("finance_accounts", {
   type: text("type", {
     enum: ["checking", "savings", "cash", "credit_card", "loan", "investment", "receivable"],
   }).notNull(),
-  openingBalance: real("opening_balance").notNull().default(0),
+  openingBalance: money("opening_balance").notNull().default(0),
 
   // credit_card only
-  creditLimit: real("credit_limit"),
+  creditLimit: money("credit_limit"),
 
   // credit_card + loan
   interestRate: real("interest_rate"),
 
   // loan only — see docs/prd/finance/debts-loans.md
-  originalAmount: real("original_amount"),
-  emiAmount: real("emi_amount"),
+  originalAmount: money("original_amount"),
+  emiAmount: money("emi_amount"),
   tenureMonths: integer("tenure_months"),
 
   /**

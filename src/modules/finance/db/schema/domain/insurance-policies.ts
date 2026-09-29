@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { recurringRules } from "./recurring-rules";
 
@@ -16,8 +17,8 @@ export const insurancePolicies = sqliteTable("finance_insurance_policies", {
   provider: text("provider").notNull(),
   name: text("name").notNull(),
   policyNumber: text("policy_number"),
-  sumAssured: real("sum_assured"),
-  premiumAmount: real("premium_amount").notNull(),
+  sumAssured: money("sum_assured"),
+  premiumAmount: money("premium_amount").notNull(),
   premiumFrequency: text("premium_frequency", {
     enum: ["weekly", "monthly", "quarterly", "half_yearly", "yearly"],
   }).notNull(),

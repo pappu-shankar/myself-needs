@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { categories } from "./categories";
 
@@ -16,7 +17,7 @@ export const budgets = sqliteTable(
     categoryId: integer("category_id")
       .notNull()
       .references(() => categories.id),
-    monthlyLimit: real("monthly_limit").notNull(),
+    monthlyLimit: money("monthly_limit").notNull(),
     effectiveFrom: text("effective_from").notNull(),
     createdAt: text("created_at")
       .notNull()

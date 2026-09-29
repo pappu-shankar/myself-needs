@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
@@ -19,7 +20,7 @@ export const transactions = sqliteTable(
       .references(() => accounts.id),
     toAccountId: integer("to_account_id").references(() => accounts.id),
     categoryId: integer("category_id").references(() => categories.id),
-    amount: real("amount").notNull(),
+    amount: money("amount").notNull(),
     date: text("date").notNull(),
     note: text("note"),
     /** Set only when this transaction was created by confirming a recurring

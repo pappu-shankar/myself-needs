@@ -1,5 +1,6 @@
 import { and, eq, gte, lt, max, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
+import { paiseToRupees } from "../../schema/money";
 import { budgets } from "../../schema/domain/budgets";
 import { categories } from "../../schema/domain/categories";
 import { transactions } from "../../schema/domain/transactions";
@@ -55,7 +56,7 @@ export function listBudgetsForMonth(monthStart: string, monthEnd: string) {
       categoryName: categories.name,
       monthlyLimit: budgets.monthlyLimit,
       effectiveFrom: budgets.effectiveFrom,
-      actualSpend: sql<number>`COALESCE(${spend.total}, 0)`,
+      actualSpend: sql<number>`COALESCE(${spend.total}, 0)`.mapWith(paiseToRupees),
     })
     .from(latest)
     .innerJoin(categories, eq(categories.id, latest.categoryId))

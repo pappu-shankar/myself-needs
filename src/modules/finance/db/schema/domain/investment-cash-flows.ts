@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { investmentHoldings } from "./investment-holdings";
 
@@ -16,7 +17,7 @@ export const investmentCashFlows = sqliteTable(
       .notNull()
       .references(() => investmentHoldings.id),
     date: text("date").notNull(),
-    amount: real("amount").notNull(),
+    amount: money("amount").notNull(),
     flowType: text("flow_type", {
       enum: ["contribution", "redemption", "dividend", "interest", "maturity"],
     }).notNull(),

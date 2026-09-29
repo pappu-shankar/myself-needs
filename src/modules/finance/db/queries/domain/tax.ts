@@ -1,5 +1,6 @@
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
+import { paiseToRupees } from "../../schema/money";
 import { investmentHoldings } from "../../schema/domain/investment-holdings";
 import { investmentCashFlows } from "../../schema/domain/investment-cash-flows";
 import { insurancePolicies } from "../../schema/domain/insurance-policies";
@@ -8,7 +9,9 @@ import { transactions } from "../../schema/domain/transactions";
 /** Contributions (money in) within [startDate, endDate) to holdings flagged 80C-eligible. */
 export function get80cHoldingContributions(startDate: string, endDate: string): number {
   const row = getDb()
-    .select({ total: sql<number>`COALESCE(SUM(-${investmentCashFlows.amount}), 0)` })
+    .select({
+      total: sql<number>`COALESCE(SUM(-${investmentCashFlows.amount}), 0)`.mapWith(paiseToRupees),
+    })
     .from(investmentCashFlows)
     .innerJoin(investmentHoldings, eq(investmentCashFlows.holdingId, investmentHoldings.id))
     .where(
@@ -37,7 +40,7 @@ export function getInsurancePremiumsPaid(
   const flagColumn =
     section === "is80cEligible" ? insurancePolicies.is80cEligible : insurancePolicies.is80dEligible;
   const row = getDb()
-    .select({ total: sql<number>`COALESCE(SUM(${transactions.amount}), 0)` })
+    .select({ total: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`.mapWith(paiseToRupees) })
     .from(transactions)
     .innerJoin(
       insurancePolicies,
