@@ -1,37 +1,115 @@
 # Investments
 
-**Related:** [returns-analytics.md](./returns-analytics.md) · [net-worth.md](./net-worth.md) · [tax-planning.md](./tax-planning.md) (capital gains reuses the cash-flow ledger) · [goal-linked-investments.md](./goal-linked-investments.md)
+**Related:** [returns-analytics.md](./returns-analytics.md) · [net-worth.md](./net-worth.md) · [allocation.md](./allocation.md) · [currency-fx.md](./currency-fx.md) · [provenance-lifecycle.md](./provenance-lifecycle.md) · [institutions.md](./institutions.md) · [tax-planning.md](./tax-planning.md) (capital gains reuses the cash-flow ledger) · [goals.md](./goals.md) · [risk.md](./risk.md)
 
-Every instrument type — equity, international equity, mutual funds (domestic & international), bonds, gold, FD, RD, chit funds, government schemes, other physical assets — is modeled the same way: one `investment_holdings` row (`type`, `name`, `account_id` or standalone) plus a shared `investment_cash_flows` ledger.
+Every instrument type — equity, international equity, mutual funds, ETFs, bonds, gold, FD, RD, chit funds, government schemes, private holdings, other physical assets — is modelled the same way: one `investment_holdings` row plus a shared `investment_cash_flows` ledger.
+
+**Why one shape:** a single ledger of dated, signed flows is what makes returns computable uniformly at any level (holding, account, entity, portfolio) with no per-type code. Depth is added as attributes on the holding and as typed rows in the same ledger, never as a parallel schema per instrument.
+
+## The holding
+
+| Field                                  | Notes                                                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `type`, `name`                         | Instrument type and display name                                                                                               |
+| `entity_id`, `institution_id`          | Whose it is, and where it is held — see [entities-ownership.md](./entities-ownership.md), [institutions.md](./institutions.md) |
+| `account_id`                           | Optional; a holding may be standalone                                                                                          |
+| `currency`                             | The currency the holding trades and is valued in. International holdings keep it permanently                                   |
+| `units_scaled`                         | Integer units at 1e6 scale                                                                                                     |
+| `liquidity`                            | `liquid` · `semi_liquid` · `illiquid`, defaulted from `type`, overridable                                                      |
+| `sector`, `country`, `market_cap_band` | Classification feeding [allocation.md](./allocation.md); user-editable, `unknown` allowed                                      |
+| `archived_at`                          | Archived, never deleted while history references it                                                                            |
+
+**Why scaled integers:** value was integer-exact units multiplied by a float price, so cash was exact while investments drifted. `units_scaled` (1e6) and `price_scaled` are integers; the product overflows 2^53 at realistic sizes (1e4 units at a price of ₹5,000 is about 5e19), so the single multiply happens in `BigInt` inside one `valueOfUnits()` helper and `BigInt` never leaves it. Prices carry their own `price_currency`, since a holding can be quoted in a currency other than the account's.
+
+## Position depth
+
+Per position the module computes, never stores:
+
+| Measure        | Derivation                                                         |
+| -------------- | ------------------------------------------------------------------ |
+| Quantity       | Sum of unit-bearing flows and corporate actions                    |
+| Average cost   | Cost basis of remaining lots ÷ quantity, in the holding's currency |
+| Market value   | `valueOfUnits(units_scaled, price_scaled)` at the latest valuation |
+| Unrealized P&L | Market value − cost basis of remaining lots                        |
+| Realized P&L   | Proceeds − cost basis of the lots sold, matched **by units**, FIFO |
+| Income         | Dividends and interest, summed from the ledger                     |
+
+**Why lots match by units:** an amount-based match cannot tell a partial sale of an appreciated lot from a partial sale of a depreciated one, so it structurally cannot produce a capital loss. Realized and unrealized stay separate everywhere they are shown — see [returns-analytics.md](./returns-analytics.md).
 
 ## The cash-flow ledger
 
-`investment_cash_flows`: `holding_id`, `date`, `amount` (negative = money in/contributed, positive = money out/received), `flow_type` (contribution, redemption, dividend, interest, maturity).
+`investment_cash_flows`: `holding_id`, `date`, `amount_minor` + `currency` (negative = money in, positive = money out), `units_scaled` where the flow moves units, `flow_type`, plus provenance fields.
 
-This one mechanism covers every instrument type without bespoke schema per type, and is what makes XIRR/IRR/CAGR computable uniformly — see [returns-analytics.md](./returns-analytics.md).
+| `flow_type`                          | Meaning                       |
+| ------------------------------------ | ----------------------------- |
+| `contribution`, `redemption`         | Purchases and sales           |
+| `dividend`, `interest`               | Income, no unit change        |
+| `maturity`                           | Term instruments paying out   |
+| `split`, `bonus`, `rights`, `merger` | Corporate actions — see below |
 
-## Per-type behavior
+Ledger rows are immutable: a correction is a void plus a replacement, so a reported return never moves silently — see [provenance-lifecycle.md](./provenance-lifecycle.md).
 
-| Type | Valuation | Notes |
-|---|---|---|
-| Equity, international equity, mutual funds (domestic & international), gold | `units` + `investment_valuations` (`holding_id`, `date`, `price_per_unit`); current value = `units × latest price` | Every holding can be updated manually. **Domestic mutual funds only** get a "Refresh NAV" button — see below. |
-| Other assets (jewellery, silver, and anything else without a dedicated type) | Same as gold — `units` (e.g. grams) + `investment_valuations`; current value = `units × latest price` | Always manual — no price provider exists for this catch-all type. |
-| Bonds | Cash flows = purchase (out) + coupon payments + maturity redemption (in) | Current value = manually entered mark-to-market or face value if held to maturity |
-| FD / RD | Cash flows = deposit(s) (out) + maturity payout (in) | Value between now and maturity computed from stored `interest_rate` (accrual estimate), not manual entry |
-| Chit funds | Simple cash flow log: each month's contribution (out) + any dividend/discount or final payout (in) | No bid-tracking mechanics modeled — deliberately simplified |
-| Government schemes | Same cash-flow mechanism | See "Scheme templates" below |
-| Dividends | Not a holding type — a `dividend` cash-flow entry against the paying holding | Flows naturally into that holding's (and the portfolio's) return calculation |
+## Corporate actions
 
-## Domestic mutual fund NAV refresh
+Corporate actions change units and cost per unit without changing what was paid, and are recorded as ledger rows so the position stays derivable.
 
-`price-providers/mutual-fund-nav.ts` calls the free, no-key AMFI/`mfapi.in` NAV API **only on manual click** (never a background poll) and inserts a new `investment_valuations` row.
+| Action                | Effect                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| Split / reverse split | Units multiply by the ratio; total cost basis unchanged, so average cost divides                |
+| Bonus                 | Extra units at zero cost; basis spread over the larger quantity                                 |
+| Rights                | A contribution (cash out) at the rights price for new units                                     |
+| Merger / demerger     | Units and basis carry to the successor holding by ratio; the old holding is archived and linked |
 
-Equity, international equity, gold, and other assets stay manual — no reliable free public data exists for those (NSE/BSE has no official free API; international equity's free options are unofficial/low-quota; gold has no solid free API; "other assets" is a catch-all with no price source at all). All sit behind the same `PriceProvider` interface, so a provider for any of them (including a paid API key) can be added later without touching the holdings schema, UI, or any calculation.
+**Why not just edit units:** editing units on a holding rewrites every price and return computed against it. A dated action leaves earlier valuations true as of their date.
 
-## Scheme templates (government schemes)
+## Valuation bases
 
-A `scheme_templates` table ships pre-seeded with common Indian schemes (PPF, EPF, NSC, SSY, SCSS, KVP, Post Office schemes, etc.) — name, typical lock-in period, interest type/rate (editable, since govt rates get revised, e.g. quarterly for PPF). You opt in per scheme by creating a holding against a template, skip any you don't hold, or add a custom one. The template only supplies reference info (lock-in countdown, current notified rate) shown alongside the holding — the holding itself uses the same cash-flow mechanism as everything else.
+Four bases exist; each valuation row records which one produced it through provenance `method`.
 
-## International currency (deferred)
+| Basis                 | Instruments                                     | `method`                                                       | Notes                                                                                        |
+| --------------------- | ----------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Market valuation      | Listed equity, funds, ETFs, gold, bonds at mark | `api_quote` where a provider supplied it, `manual` where typed | `units × latest price`                                                                       |
+| Accrual               | FD, RD                                          | `accrual`                                                      | From stored `interest_rate`; value between deposit and maturity is an estimate, not an entry |
+| Scheme balance        | PPF, EPF, NSC and similar                       | `manual` or `statement_import`                                 | The balance the scheme reports; the notified rate is reference only                          |
+| Net-invested fallback | Anything with no valuation                      | `unknown`, confidence `estimated`                              | Contributions − redemptions. Shown as a fallback, never as a market value                    |
 
-No international holdings exist yet. The account/holding types support them, but the FX-handling decision (convert-at-entry vs. track-original-currency + exchange rate) is deferred until an international holding actually exists — nothing already built needs to change when that decision is made.
+**Why net-invested is a fallback and not a default:** it is the only figure always available, and it is always wrong once an asset has moved. It is labelled so it cannot be mistaken for a mark.
+
+`unknown` is a real `method` value: pre-existing valuations cannot be told apart (a refreshed NAV and a hand-typed price look identical), so none is back-stamped. Valuations are dated replacements; a same-day re-entry supersedes and keeps the earlier revision.
+
+## Private and illiquid holdings
+
+Unlisted shares, startup equity, ESOPs, angel stakes and PE/VC commitments are ordinary holdings with `liquidity = illiquid`. They have no quote, so value is a **dated user estimate** (`method = user_estimate`, confidence `estimated`) with its `as_of` date and a note on the basis (last round, 409A, DCF). A value older than the stale bound shows as stale rather than current. ESOPs record granted, vested and exercised units separately; only vested units count towards value.
+
+**Why flagged illiquid and not discounted:** the app does not know the right discount and inventing one fabricates precision. It keeps the user's number, labels it, and lets [net-worth.md](./net-worth.md) report liquid and illiquid wealth separately.
+
+## Fund-level attributes
+
+| Attribute           | Notes                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| NAV, units          | Value = units × NAV                                                                           |
+| Expense ratio       | Annual cost drag; surfaced against return                                                     |
+| Benchmark           | Named index, for comparison only                                                              |
+| Category            | e.g. large cap, liquid debt, hybrid — drives allocation, see below                            |
+| Underlying holdings | Where known, enables **fund overlap**: the same stock held directly and through several funds |
+
+Category is what stops a debt fund counting as equity in [allocation.md](./allocation.md). Overlap is computed from underlying holdings and flagged as a concentration risk in [risk.md](./risk.md).
+
+## Per-type behaviour
+
+| Type                                                          | Notes                                                                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Equity, international equity, funds, ETFs, gold, other assets | Units + valuations. Other assets (jewellery, silver) are always manual: no price source exists |
+| Bonds                                                         | Purchase, coupons, maturity; value is a mark or face value if held to maturity                 |
+| FD / RD                                                       | Deposits and payout; value by accrual                                                          |
+| Chit funds                                                    | Contribution log plus dividend or payout. No bid mechanics, deliberately                       |
+| Government schemes                                            | Scheme balance basis, from `scheme_templates`                                                  |
+| Dividends                                                     | Not a holding type; a `dividend` flow against the paying holding                               |
+
+## Price providers
+
+All sit behind one `PriceProvider` interface. Domestic mutual-fund NAV comes from the free `mfapi.in` AMFI feed, on manual refresh. Other markets need a licensed feed; the interface means adding one touches no schema or calculation. Market data is reference data, not personal data, so it lives in a shared plaintext store and is joined to a vault at read time.
+
+## Scheme templates
+
+`scheme_templates` ships pre-seeded with common Indian schemes (PPF, EPF, NSC, SSY, SCSS, KVP, Post Office schemes): name, lock-in, interest type and notified rate. Rates are editable because the government revises them. A template supplies reference info only; the holding itself uses the same ledger as everything else.
