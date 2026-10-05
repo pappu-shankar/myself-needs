@@ -27,6 +27,16 @@ const sourceFiles = walk(SRC)
   )
   .map((file) => ({ file: path.relative(process.cwd(), file), text: readFileSync(file, "utf8") }));
 
+/**
+ * Like `sourceFiles` but *including* tests. The UTC-date trap bites a fixture
+ * just as hard as production code, and a test that derives "today" in UTC only
+ * fails between midnight and the local UTC offset — a 5.5-hour window in IST,
+ * which is how five of them sat broken without anyone noticing.
+ */
+const dateScanFiles = walk(SRC)
+  .filter((file) => /\.(ts|tsx)$/.test(file) && !file.endsWith(".d.ts"))
+  .map((file) => ({ file: path.relative(process.cwd(), file), text: readFileSync(file, "utf8") }));
+
 function startsWithDirective(text: string, directive: string): boolean {
   const firstStatement = text.replace(/^(\s*(\/\/[^\n]*|\/\*[\s\S]*?\*\/))*\s*/, "");
   return firstStatement.startsWith(`"${directive}"`) || firstStatement.startsWith(`'${directive}'`);
@@ -36,33 +46,48 @@ function importsOf(text: string): string[] {
   return [...text.matchAll(/(?:import|export)\s[^;]*?from\s+["']([^"']+)["']/g)].map((m) => m[1]);
 }
 
-/** The unlock/lock actions are the only public Server Actions — they are how a
- * session starts. */
-const PUBLIC_ACTION_FILES = new Set(["src/modules/core/session/actions.ts"]);
+/** The sign-in/sign-up/sign-out actions are the only public Server Actions —
+ * they are how a session starts. */
+const PUBLIC_ACTION_FILES = new Set(["src/modules/core/auth/actions.ts"]);
+
+/** A hand-written action body must run inside the user's request scope —
+ * `withUser` (or, for the auth/admin files, the action-level guards). A bare
+ * `requireUser()` binds a render scope only, which `getDb()` can't see here. */
+const GUARD_CALL = /await\s+(requireUserForAction|requireAdminForAction|withUser)\(/;
+
+/** Top-level `export async function name(` bodies, each up to the next top-level export. */
+function exportedFunctions(text: string): { name: string; body: string }[] {
+  return [...text.matchAll(/^export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)/gm)].map(
+    (match) => {
+      const start = match.index ?? 0;
+      const nextExport = text.indexOf("\nexport ", start + match[0].length);
+      return { name: match[1], body: text.slice(start, nextExport < 0 ? text.length : nextExport) };
+    },
+  );
+}
 
 describe("Server Actions", () => {
   const actionFiles = sourceFiles.filter(
     ({ file, text }) => startsWithDirective(text, "use server") && !PUBLIC_ACTION_FILES.has(file),
   );
 
-  it("enforce the unlocked session at every action entry point", () => {
+  it("run every exported action inside the user's scope (define*Action or withUser)", () => {
     const offenders: string[] = [];
     for (const { file, text } of actionFiles) {
-      for (const match of text.matchAll(/^export\s+(async\s+function|function)\s+(\w+)/gm)) {
-        const start = match.index ?? 0;
-        const nextExport = text.indexOf("\nexport ", start + match[0].length);
-        const body = text.slice(start, nextExport < 0 ? text.length : nextExport);
-        if (!/await\s+requireUnlocked\(\)/.test(body)) {
-          offenders.push(`${file}: ${match[2]} does not require an unlocked session`);
+      for (const { name, body } of exportedFunctions(text)) {
+        if (!GUARD_CALL.test(body)) {
+          offenders.push(`${file}: ${name} is neither define*Action nor wrapped in withUser`);
         }
       }
       for (const match of text.matchAll(/^export\s+const\s+(\w+)\s*=\s*([\s\S]{0,40})/gm)) {
-        if (/^(defineFormAction|defineAction)\s*\(/.test(match[2].trimStart())) continue;
+        if (/^(defineFormAction|defineAction|defineAdminAction)\s*\(/.test(match[2].trimStart())) {
+          continue;
+        }
         const start = match.index ?? 0;
         const nextExport = text.indexOf("\nexport ", start + match[0].length);
         const body = text.slice(start, nextExport < 0 ? text.length : nextExport);
-        if (!/await\s+requireUnlocked\(\)/.test(body)) {
-          offenders.push(`${file}: ${match[1]} does not require an unlocked session`);
+        if (!GUARD_CALL.test(body)) {
+          offenders.push(`${file}: ${match[1]} is neither define*Action nor wrapped in withUser`);
         }
       }
     }
@@ -70,19 +95,89 @@ describe("Server Actions", () => {
   });
 });
 
-describe("Session checks", () => {
-  it("run at the top of every protected page", () => {
+describe("Admin code", () => {
+  // Admins manage accounts; they must never be able to read anyone's vault.
+  it("never touches vault connections (no getDb/openVault in admin files)", () => {
     const offenders = sourceFiles
-      .filter(({ file }) => file.startsWith("src/app/(protected)/") && file.endsWith("/page.tsx"))
-      .filter(({ text }) => !/await requireUnlocked\(\)/.test(text))
+      .filter(({ file }) => /^src\/modules\/core\/auth\/admin-[^/]+\.ts$/.test(file))
+      .filter(({ text }) => /\b(getDb|openVault|runWithScope|setTestDefaultDatabase)\b/.test(text))
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("Request scope", () => {
+  it("never uses AsyncLocalStorage.enterWith", () => {
+    const offenders = sourceFiles
+      .filter(({ text }) => /\.enterWith\s*\(/.test(text))
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("Session checks", () => {
+  const protectedPages = sourceFiles.filter(
+    ({ file }) => file.startsWith("src/app/(protected)/") && /\/(page|layout)\.tsx$/.test(file),
+  );
+
+  it("run at the top of every protected page and layout", () => {
+    const offenders = protectedPages
+      .filter(({ text }) => !/await (requireUser|requireAdmin)\(/.test(text))
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
   });
 
-  it("run in every API route handler", () => {
+  // generateMetadata can run before (or without) the page body, so one that
+  // reads data must bind the scope itself.
+  it("run first in every generateMetadata that calls into a module", () => {
+    const offenders: string[] = [];
+    for (const { file, text } of protectedPages) {
+      const moduleImports = [
+        ...text.matchAll(/import\s+\{([^}]*)\}\s+from\s+["']@\/modules\/(?!core\/)[^"']+["']/g),
+      ].flatMap((m) =>
+        m[1]
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name && !name.startsWith("type "))
+          .map((name) =>
+            name
+              .split(/\s+as\s+/)
+              .pop()!
+              .trim(),
+          ),
+      );
+      for (const { name, body } of exportedFunctions(text)) {
+        if (name !== "generateMetadata") continue;
+        const callsModule = moduleImports.some((fn) => new RegExp(`\\b${fn}\\(`).test(body));
+        if (!callsModule) continue;
+        const guard = body.search(/await requireUser\(/);
+        const firstCall = Math.min(
+          ...moduleImports
+            .map((fn) => body.search(new RegExp(`\\b${fn}\\(`)))
+            .filter((index) => index >= 0),
+        );
+        if (guard < 0 || guard > firstCall) offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("run in every API route handler, inside the request scope", () => {
+    const offenders: string[] = [];
+    for (const { file, text } of sourceFiles.filter(
+      ({ file }) => file.startsWith("src/app/api/") && file.endsWith("/route.ts"),
+    )) {
+      for (const { name, body } of exportedFunctions(text)) {
+        if (!/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(name)) continue;
+        if (!/await withUser\(/.test(body)) offenders.push(`${file}: ${name}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("never use the removed requireUnlocked alias", () => {
     const offenders = sourceFiles
-      .filter(({ file }) => file.startsWith("src/app/api/") && file.endsWith("/route.ts"))
-      .filter(({ text }) => !/await requireUnlocked\(\)/.test(text))
+      .filter(({ text }) => /\brequireUnlocked\b/.test(text))
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
   });
@@ -126,10 +221,45 @@ describe("Import boundaries", () => {
 
 describe("Dates", () => {
   it("never derive a calendar date from toISOString() (that's the UTC date — use @/lib/dates)", () => {
+    // Matches any `.toISOString().slice(0, 8|10)`, not just the inlined
+    // `new Date().toISOString()` form — splitting it across a local helper
+    // (`isoDate(d)` called with `new Date()`) is the same bug wearing a hat, and
+    // is exactly what slipped past the previous version of this rule.
+    //
+    // Two forms are legitimate and allowed, because they build a date in UTC and
+    // read it straight back rather than asking what day it is: `Date.UTC(...)` in
+    // the same statement, and parse-then-verify comparisons (`... !== value`).
+    const offenders: string[] = [];
+    for (const { file, text } of dateScanFiles) {
+      if (file === "src/lib/dates.ts") continue;
+      // Collapse whitespace so a chain broken across lines is still one statement.
+      for (const statement of text.replace(/\s+/g, " ").split(";")) {
+        if (!/\.toISOString\(\) ?\.slice\(0, ?(?:8|10)\)/.test(statement)) continue;
+        if (/Date\.UTC\(/.test(statement)) continue;
+        if (/\.slice\(0, ?(?:8|10)\) ?(?:!==|===)/.test(statement)) continue;
+        offenders.push(file);
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([]);
+  });
+});
+
+describe("Isomorphic health code", () => {
+  // engine/ and importers/ run in client components as well as on the server,
+  // so they may not reach the database, Next.js or Node — see docs/prd/health/gym.md.
+  it("engine/ and importers/ import only their own files, gym-types, engine and @/lib/dates", () => {
+    const allowed = (spec: string) =>
+      spec.startsWith("./") ||
+      spec === "../gym-types" ||
+      spec.startsWith("../engine/") ||
+      spec === "@/lib/dates";
     const offenders = sourceFiles
-      .filter(({ file }) => file !== "src/lib/dates.ts")
-      .filter(({ text }) => /new\s+Date\(\)\.toISOString\(\)\s*\.slice\(0,\s*(?:8|10)\)/.test(text))
-      .map(({ file }) => file);
+      .filter(({ file }) => /^src\/modules\/health\/(engine|importers)\//.test(file))
+      .flatMap(({ file, text }) =>
+        importsOf(text)
+          .filter((spec) => !allowed(spec))
+          .map((spec) => `${file} -> ${spec}`),
+      );
     expect(offenders).toEqual([]);
   });
 });

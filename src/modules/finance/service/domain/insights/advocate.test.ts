@@ -1,6 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { addMonths, todayIso } from "@/lib/dates";
 import { getFinanceSnapshot } from "./snapshot";
+import { currentFiscalYear } from "../../utility/fiscal-year";
 import {
   regimeVerdictRule,
   rateArbitrageRule,
@@ -18,18 +20,15 @@ import { createBudget } from "../budgets";
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function todayStr() {
-  return isoDate(new Date());
+  return todayIso();
 }
-/** April 1st of the financial year "today" falls in (India's FY runs April-March), matching getCurrentFinancialYear's own logic. */
+function monthsAgo(n: number) {
+  return addMonths(todayIso(), -n);
+}
+/** April 1st of the financial year "today" falls in. */
 function currentFyStart(): string {
-  const today = new Date();
-  const year = today.getUTCFullYear();
-  const startYear = today.getUTCMonth() < 3 ? year - 1 : year;
-  return `${startYear}-04-01`;
+  return currentFiscalYear().start;
 }
 
 describe("regimeVerdictRule", () => {
@@ -72,6 +71,21 @@ describe("rateArbitrageRule", () => {
     ]);
   });
 
+  it("compares against the lowest-rate FD/RD, not the first by name", () => {
+    const loan = createAccount({
+      name: "Car Loan",
+      type: "loan",
+      openingBalance: 100000,
+      interestRate: 9,
+    });
+    createHolding({ type: "fd", name: "A High FD", interestRate: 8 });
+    const low = createHolding({ type: "rd", name: "Z Low RD", interestRate: 5.5 });
+
+    expect(rateArbitrageRule(getFinanceSnapshot())).toEqual([
+      expect.objectContaining({ id: `rate-arbitrage:${loan.id}:${low.id}` }),
+    ]);
+  });
+
   it("does not fire when the FD/RD rate is at or above the liability's rate", () => {
     createAccount({ name: "Car Loan", type: "loan", openingBalance: 100000, interestRate: 5 });
     createHolding({ type: "fd", name: "Bank FD", interestRate: 8 });
@@ -90,7 +104,9 @@ describe("idleCashRule", () => {
       accountId: checking.id,
       categoryId: category.id,
       amount: 1000,
-      date: todayStr(),
+      // Inside the emergency-fund window: that is the last 3 *complete* months,
+      // so an expense dated today would not be counted at all.
+      date: monthsAgo(1),
     });
 
     const insights = idleCashRule(getFinanceSnapshot());

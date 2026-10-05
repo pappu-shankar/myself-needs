@@ -1,6 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { addDays, addMonths, todayIso } from "@/lib/dates";
 import { getFinanceSnapshot } from "./snapshot";
+import { currentFiscalYear } from "../../utility/fiscal-year";
 import {
   contributionLimitsRule,
   ltcgApproachingRule,
@@ -16,28 +18,18 @@ import { createTransaction } from "../transactions";
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function daysAgo(n: number) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return isoDate(d);
+  return addDays(todayIso(), -n);
 }
 function monthsAgo(n: number) {
-  const d = new Date();
-  d.setUTCMonth(d.getUTCMonth() - n);
-  return isoDate(d);
+  return addMonths(todayIso(), -n);
 }
 function todayStr() {
-  return isoDate(new Date());
+  return todayIso();
 }
-/** April 1st of the financial year "today" falls in, matching getCurrentFinancialYear's own logic. */
+/** April 1st of the financial year "today" falls in. */
 function currentFyStart(): string {
-  const today = new Date();
-  const year = today.getUTCFullYear();
-  const startYear = today.getUTCMonth() < 3 ? year - 1 : year;
-  return `${startYear}-04-01`;
+  return currentFiscalYear().start;
 }
 
 describe("contributionLimitsRule", () => {
@@ -80,7 +72,10 @@ describe("contributionLimitsRule", () => {
     const insights = contributionLimitsRule(snapshot);
 
     expect(insights.map((i) => i.id).sort()).toEqual(
-      [`80c-limit-reached:${snapshot.fy.label}`, `80d-limit-reached:${snapshot.fy.label}`].sort(),
+      [
+        `80c-limit-reached:FY ${snapshot.fy.label}`,
+        `80d-limit-reached:FY ${snapshot.fy.label}`,
+      ].sort(),
     );
   });
 

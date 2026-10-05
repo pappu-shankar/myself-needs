@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { addMonths, todayIso } from "@/lib/dates";
 import { getFinanceSnapshot } from "./snapshot";
 import { createAccount } from "../accounts";
 import { createCategory } from "../categories";
@@ -12,16 +13,11 @@ import { createRecurringRule } from "../recurring";
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function monthsAgo(n: number) {
-  const d = new Date();
-  d.setUTCMonth(d.getUTCMonth() - n);
-  return isoDate(d);
+  return addMonths(todayIso(), -n);
 }
 function todayStr() {
-  return isoDate(new Date());
+  return todayIso();
 }
 
 describe("getFinanceSnapshot", () => {
@@ -43,6 +39,15 @@ describe("getFinanceSnapshot", () => {
       date: todayStr(),
     });
     createTransaction({ type: "expense", accountId: checking.id, amount: 50, date: todayStr() });
+    // Emergency-fund coverage averages the last 3 *complete* months, so the
+    // rows above (dated today) fall outside it and it needs history to divide by.
+    createTransaction({
+      type: "expense",
+      accountId: checking.id,
+      categoryId: category.id,
+      amount: 100,
+      date: monthsAgo(1),
+    });
 
     const holding = createHolding({ type: "equity", name: "Acme Corp" });
     createValuation({ holdingId: holding.id, date: todayStr(), pricePerUnit: 100 });
@@ -83,7 +88,7 @@ describe("getFinanceSnapshot", () => {
     expect(snapshot.regime).toHaveProperty("betterRegime");
     expect(snapshot.capitalGains).toHaveProperty("totalTax");
     expect(snapshot.taxSettings.eightyCLimit).toBe(150000);
-    expect(snapshot.fy.label).toMatch(/^FY \d{4}-\d{2}$/);
+    expect(snapshot.fy.label).toMatch(/^\d{4}-\d{2}$/);
     // duplicate-transaction group only matches the two identical categorized transactions, not the third (uncategorized, different amount)
     expect(snapshot.duplicateGroups).toHaveLength(1);
     expect(snapshot.duplicateGroups[0]).toMatchObject({ count: 2, amount: 100 });

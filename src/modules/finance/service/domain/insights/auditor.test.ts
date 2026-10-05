@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { addDays, addMonths, todayIso } from "@/lib/dates";
 import { getFinanceSnapshot } from "./snapshot";
 import {
   implausibleBalanceRule,
@@ -17,21 +18,14 @@ import { createRecurringRule } from "../recurring";
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function daysAgo(n: number) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return isoDate(d);
+  return addDays(todayIso(), -n);
 }
 function monthsAgo(n: number) {
-  const d = new Date();
-  d.setUTCMonth(d.getUTCMonth() - n);
-  return isoDate(d);
+  return addMonths(todayIso(), -n);
 }
 function todayStr() {
-  return isoDate(new Date());
+  return todayIso();
 }
 
 describe("implausibleBalanceRule", () => {

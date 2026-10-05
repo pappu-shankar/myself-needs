@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { addDays, todayIso } from "@/lib/dates";
 import { getInsights, dismissInsightById } from "./engine";
 import { createAccount } from "../accounts";
 import { createCategory } from "../categories";
@@ -9,16 +10,11 @@ import { createInsurancePolicy } from "../insurance";
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function daysAgo(n: number) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return isoDate(d);
+  return addDays(todayIso(), -n);
 }
 function todayStr() {
-  return isoDate(new Date());
+  return todayIso();
 }
 
 describe("getInsights", () => {
