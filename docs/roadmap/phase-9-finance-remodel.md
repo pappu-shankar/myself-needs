@@ -10,7 +10,7 @@ Phase 2 built finance as a **manual, single-currency, single-user INR tracker** 
 
 This is not an extension of Phase 2. Four of the new foundations contradict constraints Phase 2 deliberately adopted (single currency, no import, no connected accounts, no notifications), so the storage layer is replaced underneath a layer of genuinely valuable, tested domain math that survives.
 
-**Scale:** ~17–19k lines new or rewritten, against a current finance footprint of ~15.2k. Larger than the original finance build. Roughly 10–14 weeks of focused work; Phases 1–3 (~5–6 weeks) gate everything else.
+**Scale:** ~15–17k lines new or rewritten, against a current finance footprint of ~15.2k. Still larger than the original finance build. Roughly 9–13 weeks of focused work; Phases 1–3 (~5–6 weeks) gate everything else. Deferring all AI work removed about a week and, more importantly, a whole infrastructure dependency: no model SDK, no prompt layer, no eval suite, no consent flow.
 
 **Reuse verdict** (measured, not estimated):
 
@@ -89,7 +89,7 @@ Fixes what `finance-module-assessment.md` calls "the strongest day-to-day usabil
 | # | Task | Status |
 |---|---|---|
 | 4.1 | CSV statement import reusing `src/modules/health/importers/{csv,detect,name-match}.ts` and the gym import UI harness (chunked, resumable, review-before-commit) | Not started |
-| 4.2 | PDF/document extraction via LLM, incl. password-protected statements | Not started |
+| 4.2 | PDF statement parsing — text-layer only, deterministic per-institution layout rules, incl. password-protected files. Scanned/image PDFs are rejected with an explanation (OCR and AI extraction are future) | Not started |
 | 4.3 | Transfer detection — pair the two legs of an internal movement so it stops counting as spending | Not started |
 | 4.4 | Auto-categorization with user-editable categories and learned overrides | Not started |
 | 4.5 | Recurring **detection** from transaction history (Phase 2 only generates from declared rules) | Not started |
@@ -114,14 +114,15 @@ Fixes what `finance-module-assessment.md` calls "the strongest day-to-day usabil
 | 6.3 | Monte Carlo goal success probability (10k closed-form paths, visible editable return mean/vol) | Not started |
 | 6.4 | What-if scenarios — bounded to "what does this decision do to this goal" | Not started |
 
-## Phase 7 — Intelligence: AI planner and alert center
+## Phase 7 — Alert centre
+
+The AI planner that originally sat here is a future enhancement — see the deferred list. What remains is deterministic, and was always the larger part of the value.
 
 | # | Task | Status |
 |---|---|---|
-| 7.1 | Alert Center: extend the existing 15-rule insights engine to 4 severities + configurable thresholds, computed on read | Not started |
-| 7.2 | Anthropic SDK + prompt layer working from derived aggregates, not raw ledger rows | Not started |
-| 7.3 | Level-3 planner with explainability: rationale, assumptions, risks, alternatives, assumption sensitivity | Not started |
-| 7.4 | Eval suite for the planner — an LLM feature without one is untestable | Not started |
+| 7.1 | Alert Centre: extend the existing 15-rule insights engine to 4 severities + configurable thresholds, computed on read | Not started |
+| 7.2 | Rule coverage for the new domains — currency exposure, entity concentration, stale valuations under multi-currency, goal drift, loan reconciliation drift | Not started |
+| 7.3 | Prioritisation and the Home command-centre surface | Not started |
 
 ## Phase 8 — Reference data, jobs, export
 
@@ -173,7 +174,7 @@ Every entry records the reason. Argue with the reason, not the conclusion.
 21. **Household wealth is an entity rollup inside one vault, not linked logins.** A rollup across two accounts means user 1 reading user 2's numbers, which decision 1 rules out. Entities deliver the same consolidated picture with zero cross-user access, and for HNI/UHNI it matches practice — one person or a family office maintains the consolidated view while individuals keep their own logins for their own tracking. State plainly in the PRD: entities are *your record* of family and business wealth, not accounts those people log into, and nothing syncs between the two.
 22. **Goal success probability uses light Monte Carlo** (10k closed-form paths, milliseconds in JS) because a probability is a distributional claim a deterministic projection cannot honestly produce. Everything else stays deterministic with sensitivity bands. This stays inside the no-long-term-forecasting boundary: it answers "will this goal be met", not "what is my net worth in 2035".
 23. **Behavioral risk is dropped from the risk engine — six dimensions, not seven.** "Overtrading / panic selling" needs trade-timing history the app will never hold. A score computed from absent data is worse than no score; say so in the UI rather than faking it.
-24. **AI planner keeps explainability.** A Level-3 planner that cannot show its reasoning is a black box issuing financial advice. Hard boundary: analysis and personalized planning, never "buy XYZ", never execution.
+24. **All AI/LLM features are deferred, and nothing sends financial data to a model provider.** This covers the Level-3 planner, LLM-assisted document extraction and OCR. The reason is decision 1's access guarantee: "only the account holder sees their finances" stops being literally true the moment a statement or a portfolio summary is posted to a third party, and a guarantee with an asterisk is worth far less than one without. It also removes a whole class of question — consent, provider choice, retention, prompt injection from imported documents — that would otherwise have to be answered before shipping. The boundaries already decided are preserved in `ai-planner.md` so they need not be re-argued if the feature returns: explainability required, analysis and planning only, never a named-security buy/sell, never execution.
 25. **Tax is analysis only — no ITR preparation or e-filing.** Projections, STCG/LTCG, loss harvesting, 80C/80D, regime comparison and "what tax if I sell these" are all in. Filing carries annual form-version maintenance and an accuracy liability the rest of the app does not carry.
 26. **Launch currencies INR, USD, GBP, EUR; markets India + US/UK/EU.** FX is free and licence-clean via the ECB daily series (public domain, EUR pivot, covers all four). Equity across those exchanges likely needs a paid feed — procurement, not code. Note `api.mfapi.in`, the one existing integration, is an unofficial AMFI scraper: fine personally, shaky commercially.
 
@@ -181,32 +182,34 @@ Every entry records the reason. Argue with the reason, not the conclusion.
 
 27. Account Aggregator / bank and broker connections — needs an RBI-regulated AA licence or a TSP partnership, company KYC and hosted callbacks. The ingestion fallback chain (auto → connector → file → manual) stays the stated architecture, and Phase 4's provenance + `import_batch_id` are the seam a connector plugs into, so nothing built now blocks it.
 28. Monetization, B2B, commissions, referrals. Product decision; no code until there are users.
-29. Linked household logins; full role-based access; advisor/CA collaboration; portfolio benchmarking; trusts, holding companies, estate and succession planning; multi-country tax engines. The `finance_entities` + `entity_stakes` shape is deliberately built to accept the HNI/family-office set without a second migration.
-30. Generic long-term net-worth forecasting — explicitly declined, and that is what keeps Phase 6 bounded.
-31. Full multi-tenant database migration — nothing in this spec needs it; revisit only on real load.
+29. **Every AI/LLM feature**, per decision 24 — the Level-3 planner (`ai-planner.md`, with its boundaries preserved), LLM-assisted document extraction, OCR for scanned statements, and any model-backed categorisation. Worth being clear about what does *not* depend on this: the risk engine, goal success probability, what-if simulation, the alert engine, transfer-pair detection and auto-categorisation are all deterministic and remain in scope. The INTELLIGENCE section reserves a Recommendations page for the planner and works without it.
+30. Linked household logins; full role-based access; advisor/CA collaboration; portfolio benchmarking; trusts, holding companies, estate and succession planning; multi-country tax engines. The `finance_entities` + `entity_stakes` shape is deliberately built to accept the HNI/family-office set without a second migration.
+31. Generic long-term net-worth forecasting — explicitly declined, and that is what keeps Phase 6 bounded.
+32. Full multi-tenant database migration — nothing in this spec needs it; revisit only on real load.
 
 ### Process
 
-32. **Phase 1 ships big-bang on a feature branch**, not behind a compatibility shim. It changes how every money value is stored and displayed, so finance breaks all at once; production stays on current code until the branch is green. **Do not touch finance on `main` while the branch is open** — anything under `src/modules/finance` or `src/app/(protected)/finance` will conflict across dozens of files. Phases 2–8 are ordinary incremental work on `main`.
-33. **No down-migrations; `BACKUPS_TO_KEEP` stays at 5.** Reverse SQL for table rebuilds is itself error-prone and would roughly double Phase 1's migration work. Accepted risk, stated plainly: five failed sign-in attempts each take a fresh pre-migration backup and can evict genuinely older restore points. What makes this acceptable is the pre-merge rehearsal against a copy of real data — it moves discovery of a bad migration to before the merge, where the only data at stake is a throwaway copy.
-34. **Phases 4–8 in this document are sketches, not specs.** Phase 4 (document ingestion with LLM extraction) and Phase 7 (the AI planner) are each a multi-week subsystem described in a few rows. Each needs its own planning pass when reached. Do not treat these rows as sufficient specification.
+33. **Phase 1 ships big-bang on a feature branch**, not behind a compatibility shim. It changes how every money value is stored and displayed, so finance breaks all at once; production stays on current code until the branch is green. **Do not touch finance on `main` while the branch is open** — anything under `src/modules/finance` or `src/app/(protected)/finance` will conflict across dozens of files. Phases 2–8 are ordinary incremental work on `main`.
+34. **No down-migrations; `BACKUPS_TO_KEEP` stays at 5.** Reverse SQL for table rebuilds is itself error-prone and would roughly double Phase 1's migration work. Accepted risk, stated plainly: five failed sign-in attempts each take a fresh pre-migration backup and can evict genuinely older restore points. What makes this acceptable is the pre-merge rehearsal against a copy of real data — it moves discovery of a bad migration to before the merge, where the only data at stake is a throwaway copy.
+35. **Phases 4–8 in this document are sketches, not specs.** Phase 4 (statement and document ingestion) especially: per-institution layout rules, transfer pairing and categorisation each have real depth behind a few table rows. It needs its own planning pass when reached. Do not treat these rows as sufficient specification.
 
 ### Added during the Phase 0 PRD rewrite
 
-35. **`derived` added to the provenance `method` enum.** The original seven values had no home for a value the app computed rather than observed — a government-scheme balance rolled forward from its contribution ledger, or a net-invested fallback for an instrument with no market price. `accrual` is specifically interest compounding at a known rate, so these were landing on `unknown` and losing a real distinction. `derived` always pairs with `confidence: estimated`.
-36. **Four net-worth scopes made explicit:** Total (everything `Self` owns, unprorated — the headline figure), Individual (one named entity alone), Household (personal/joint/family entities, prorated), Business-adjusted (household plus the prorated business and trust share, flagged illiquid). Household and business-adjusted differ only by whether businesses and trusts are included, and are kept apart because a family's spendable position and its total economic exposure are different questions — conflating them is how an illiquid company stake ends up reading like money in the bank.
-37. **`revolving_credit` account type added, and APR moved onto `finance_credit_terms`.** The universal loan engine requires line of credit, overdraft, BNPL and margin loan, and none of them fit `loan` (no amortization schedule) or `credit_card`. They take credit terms rather than loan terms. Loan and credit rates are stored as integer basis points throughout, for the same reason ownership stakes are.
-38. **Liquidity class applies to holdings as well as accounts**, defaulted from holding type. Without it an illiquid private holding is indistinguishable from a listed one in every liquidity-aware figure.
-39. **`linked_goal_id` becomes a real foreign key.** It was a plain ID with no FK only because goals lived in another module; `finance_goals` is in the same module, so the constraint is now available and the migration's `foreign_key_check` gate can enforce it.
-40. **Emergency-fund coverage lives in cash flow**, and must always state both halves of its ratio — the `liquid` class only, and a trailing three *complete* months of expense, so a reading taken on the 2nd is not distorted by two days of data.
+36. **`derived` added to the provenance `method` enum.** The original seven values had no home for a value the app computed rather than observed — a government-scheme balance rolled forward from its contribution ledger, or a net-invested fallback for an instrument with no market price. `accrual` is specifically interest compounding at a known rate, so these were landing on `unknown` and losing a real distinction. `derived` always pairs with `confidence: estimated`.
+37. **Four net-worth scopes made explicit:** Total (everything `Self` owns, unprorated — the headline figure), Individual (one named entity alone), Household (personal/joint/family entities, prorated), Business-adjusted (household plus the prorated business and trust share, flagged illiquid). Household and business-adjusted differ only by whether businesses and trusts are included, and are kept apart because a family's spendable position and its total economic exposure are different questions — conflating them is how an illiquid company stake ends up reading like money in the bank.
+38. **`revolving_credit` account type added, and APR moved onto `finance_credit_terms`.** The universal loan engine requires line of credit, overdraft, BNPL and margin loan, and none of them fit `loan` (no amortization schedule) or `credit_card`. They take credit terms rather than loan terms. Loan and credit rates are stored as integer basis points throughout, for the same reason ownership stakes are.
+39. **Liquidity class applies to holdings as well as accounts**, defaulted from holding type. Without it an illiquid private holding is indistinguishable from a listed one in every liquidity-aware figure.
+40. **`linked_goal_id` becomes a real foreign key.** It was a plain ID with no FK only because goals lived in another module; `finance_goals` is in the same module, so the constraint is now available and the migration's `foreign_key_check` gate can enforce it.
+41. **Emergency-fund coverage lives in cash flow**, and must always state both halves of its ratio — the `liquid` class only, and a trailing three *complete* months of expense, so a reading taken on the 2nd is not distorted by two days of data.
 
 ## Open questions
 
 Not blockers for Phases 1–3, but each needs an answer before the phase that depends on it.
 
+_The original question A — whether financial data may leave the vault to reach an LLM — is closed. It does not: all AI features are deferred, see decision 24._
+
 | # | Question | Blocks |
 |---|---|---|
-| A | **Does financial data leave the vault to reach an LLM, and under what consent?** Both document extraction (Phase 4) and the planner (Phase 7) send user financial content to a model provider. That sits against the product's stated position that nobody but the account holder sees their finances. Needs an explicit decision on scope (raw statement text vs derived aggregates), opt-in, and provider. | Phases 4, 7 |
 | B | **Where do sector, country, market-cap band and fund underlying holdings come from?** Needed for multi-dimensional allocation and fund-overlap detection. Currently specified as user-editable with no source. The ECB FX series does not cover it and no equity reference feed is chosen. | Phase 5 |
 | C | **Where does the CPI series for inflation-adjusted returns come from?** Same gap — not covered by the planned reference data. | Phase 5 |
 | D | **Does Home run the full rule engine on every open?** Alerts compute on read and Home shows prioritised alerts, which is consistent but means the whole snapshot is composed on every visit. May need a bounded subset or a per-request memo. | Phase 3 |

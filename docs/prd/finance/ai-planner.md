@@ -2,6 +2,8 @@
 
 **Related:** [goals.md](./goals.md) · [risk.md](./risk.md) · [what-if.md](./what-if.md) · [tax-planning.md](./tax-planning.md) · [allocation.md](./allocation.md) · [provenance-lifecycle.md](./provenance-lifecycle.md)
 
+> **Future enhancement — not in current scope.** Every AI/LLM-backed feature is deferred. Nothing in the product sends financial data to a model provider, which is what keeps the guarantee that only the account holder ever sees their finances literally true rather than qualified. This document is kept because the boundaries below were decided and should not be re-argued if the feature is revisited.
+
 A Level-3 planner: given the user's goals, risk tolerance, current portfolio, liquidity, debt, tax position and time horizon, it **proposes an allocation** and says why.
 
 ## Explainability

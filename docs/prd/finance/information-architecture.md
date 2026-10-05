@@ -11,7 +11,7 @@ Finance is organised into six sections.
 | DEBT | Loans, credit, debt analysis |
 | GOALS | All goals, progress, planning |
 | TAX | Overview, capital gains, income, planning |
-| INTELLIGENCE | Financial health, risk, alerts, recommendations, what-if |
+| INTELLIGENCE | Financial health, risk, alerts, what-if |
 
 ## Structural constraints
 
@@ -24,3 +24,5 @@ Finance is organised into six sections.
 Home answers one question: **"what is happening with my money, and what needs my attention?"** It holds an overview (net worth with its confidence mix, cash position), the prioritised alerts from [alerts.md](./alerts.md), and quick actions (add transaction, record a valuation, import a statement).
 
 It is deliberately not a dashboard that tries to contain everything. Detail lives in the sections; Home links into them.
+
+A **Recommendations** page under INTELLIGENCE is reserved for the [AI planner](./ai-planner.md), which is a future enhancement. The section works without it: financial health, risk, alerts and what-if are all deterministic and need no model.

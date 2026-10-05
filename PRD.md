@@ -42,7 +42,7 @@ Grouped as the product's information architecture — see [information-architect
 | Intelligence | Risk engine | [risk.md](./docs/prd/finance/risk.md) |
 | Intelligence | What-if simulation | [what-if.md](./docs/prd/finance/what-if.md) |
 | Intelligence | Alerts & insights | [alerts.md](./docs/prd/finance/alerts.md) |
-| Intelligence | AI financial planner | [ai-planner.md](./docs/prd/finance/ai-planner.md) |
+| Intelligence | AI financial planner — _future enhancement, not in scope_ | [ai-planner.md](./docs/prd/finance/ai-planner.md) |
 | Tools | Utility calculators | [calculators.md](./docs/prd/finance/calculators.md) |
 | — | Information architecture | [information-architecture.md](./docs/prd/finance/information-architecture.md) |
 
@@ -54,3 +54,4 @@ Grouped as the product's information architecture — see [information-architect
 - Every value carries its provenance and confidence. Estimates, accruals, stale prices and verified records are visibly different, and aggregates report their mix.
 - No reminders/notifications — everything surfaces only when you open the app.
 - Read-only with respect to money: the product never moves funds, places trades, or executes any financial transaction.
+- No AI/LLM features, and no financial data sent to a model provider. Every analysis, score, projection and alert is deterministic and computed locally. Deferred AI work is recorded as future enhancements.
