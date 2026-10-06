@@ -23,8 +23,18 @@ export const goals = sqliteTable("plans_goals", {
     .notNull()
     .default("important"),
   targetDate: text("target_date"),
-  /** Only meaningful for `type: "financial"` — the ₹ target progress is measured against. */
-  targetAmount: real("target_amount"),
+  /** Only meaningful for `type: "financial"` — the target progress is measured
+   * against, as an integer amount in `currency`'s minor units. Money is never a
+   * float here: see docs/architecture/data-model.md. */
+  targetAmountMinor: integer("target_amount_minor"),
+  /** The currency `target_amount_minor` is denominated in. */
+  currency: text("currency").notNull().default("INR"),
+  /**
+   * The finance module's goal this one corresponds to, for a goal whose
+   * funding and progress finance computes. A plain ID with no foreign key, as
+   * every cross-module reference is. See docs/prd/finance/goals.md.
+   */
+  financeGoalId: integer("finance_goal_id"),
   /** Manually updated, only meaningful for `type: "other"` — financial goals derive progress from linked holdings instead. */
   progressPercent: real("progress_percent"),
   note: text("note"),

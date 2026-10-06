@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DomainError } from "@/modules/core/errors";
 import type { PriceProvider, PriceQuote } from "./types";
+import { toPriceScaled } from "../units";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -92,6 +93,9 @@ export const mutualFundNavProvider: PriceProvider = {
     }
 
     const latest = parsed.data.data[0];
-    return { date: latest.date, pricePerUnit: latest.nav };
+    // AMFI publishes NAVs in rupees. Stated here rather than assumed by the
+    // caller: a holding denominated in anything else must be refused, not
+    // converted, and it can only be refused if the feed says what it means.
+    return { date: latest.date, priceScaled: toPriceScaled(latest.nav), currency: "INR" };
   },
 };

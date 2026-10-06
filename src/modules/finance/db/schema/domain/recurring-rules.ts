@@ -1,8 +1,8 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
+import { goals } from "./goals";
 import { currencyColumn, minorAmount } from "../currency";
 import { archivableColumns } from "../lifecycle";
 
@@ -21,7 +21,7 @@ export const recurringRules = sqliteTable("finance_recurring_rules", {
     .references(() => accounts.id),
   toAccountId: integer("to_account_id").references(() => accounts.id),
   categoryId: integer("category_id").references(() => categories.id),
-  amount: money("amount").notNull(),
+  amountMinor: minorAmount("amount_minor").notNull(),
   currency: currencyColumn(),
   toAmountMinor: minorAmount("to_amount_minor"),
   toCurrency: text("to_currency"),
@@ -32,8 +32,9 @@ export const recurringRules = sqliteTable("finance_recurring_rules", {
   endDate: text("end_date"),
   note: text("note"),
 
-  /** Points at `plans_goals.id` by plain value only — never a DB-level foreign key. See docs/prd/finance/goal-linked-investments.md. */
-  linkedGoalId: integer("linked_goal_id"),
+  /** The financial goal this schedule contributes to — a real foreign key, as
+   * `finance_goals` is in this module. See docs/prd/finance/goals.md. */
+  linkedGoalId: integer("linked_goal_id").references(() => goals.id),
 
   /** Paused rules stop producing due periods without rewriting any confirmed
    * history. See docs/prd/finance/recurring-transactions.md. */

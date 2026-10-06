@@ -17,19 +17,38 @@
  * to every bond holding that currently has none.
  */
 import { todayIso } from "@/lib/dates";
+import { formatMoney, toMinor } from "@/lib/format";
 import { createValuation, getHoldingsWithValue } from "@/modules/finance";
+import { toPriceScaled } from "@/modules/finance/service/utility/units";
 import { withUserVault } from "./lib/vault-cli";
 
 const TODAY = todayIso();
+/** Face value per bond, in major units — scaled for storage at the call site. */
+const FACE_VALUE = 100000;
 
 void withUserVault(() => {
-  const bonds = getHoldingsWithValue().filter((h) => h.type === "bond" && h.currentValue === 0);
+  const bonds = getHoldingsWithValue().filter(
+    (h) => h.type === "bond" && h.currentValueMinor === 0,
+  );
   console.log(`Found ${bonds.length} bond holding(s) with zero value.`);
   for (const bond of bonds) {
-    createValuation({ holdingId: bond.id, date: TODAY, pricePerUnit: 100000 });
-    console.log(`  Fixed: ${bond.name} (id ${bond.id}) -> 100000`);
+    // Prices are scaled by PRICE_SCALE, independent of the currency's own
+    // exponent — `toPriceScaled`, not `toMinor`.
+    createValuation({
+      holdingId: bond.id,
+      date: TODAY,
+      priceScaled: toPriceScaled(FACE_VALUE),
+      priceCurrency: bond.currency,
+    });
+    console.log(
+      `  Fixed: ${bond.name} (id ${bond.id}) -> ${formatMoney({ minor: toMinor(FACE_VALUE, bond.currency), currency: bond.currency })}`,
+    );
   }
 
-  const holdingsTotal = getHoldingsWithValue().reduce((sum, h) => sum + h.currentValue, 0);
-  console.log(`\nHoldings total now: ${holdingsTotal.toFixed(2)}`);
+  const totals = new Map<string, number>();
+  for (const holding of getHoldingsWithValue()) {
+    totals.set(holding.currency, (totals.get(holding.currency) ?? 0) + holding.currentValueMinor);
+  }
+  console.log("\nHoldings total now, per currency:");
+  for (const [currency, minor] of totals) console.log(`  ${formatMoney({ minor, currency })}`);
 });

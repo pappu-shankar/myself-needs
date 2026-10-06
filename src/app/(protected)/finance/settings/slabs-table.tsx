@@ -19,8 +19,17 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { toMajor } from "@/lib/format";
+import { fromRateBps } from "@/modules/finance/service/utility/units";
+import { STATUTORY_TAX_CURRENCY as STATUTORY_CURRENCY } from "@/modules/finance/types";
 
 type Slab = ReturnType<typeof getTaxPolicyView>["oldSlabs"][number];
+
+/** Slabs are stored as INR paise and basis points; the table and the form speak
+ * rupees and percentages, and the action converts back on submit. */
+const rupees = (minor: number) => toMajor(minor, STATUTORY_CURRENCY);
+const uptoRupees = (slab: Slab) =>
+  slab.uptoAmountMinor === null ? null : rupees(slab.uptoAmountMinor);
 
 const initialState: ActionState<void> = {};
 
@@ -82,16 +91,18 @@ function SlabRow({
   const [deleteState, deleteAction, isDeleting] = useActionState(deleteTaxSlabAction, initialState);
   const formId = `slab-${slab.id}`;
   // Remount the inputs when the saved values change or a failed save echoes values back.
-  const inputKey = `${slab.uptoAmount}:${slab.ratePercent}:${saveState.error ? JSON.stringify(saveState.values) : ""}`;
+  const inputKey = `${slab.uptoAmountMinor}:${slab.rateBps}:${saveState.error ? JSON.stringify(saveState.values) : ""}`;
 
   if (!editable) {
     return (
       <TableRow>
         <TableCell className="tabular-nums">{previousUpto.toLocaleString("en-IN")}</TableCell>
         <TableCell className="text-right tabular-nums">
-          {slab.uptoAmount !== null ? slab.uptoAmount.toLocaleString("en-IN") : "No limit"}
+          {slab.uptoAmountMinor !== null
+            ? rupees(slab.uptoAmountMinor).toLocaleString("en-IN")
+            : "No limit"}
         </TableCell>
-        <TableCell className="text-right tabular-nums">{slab.ratePercent}%</TableCell>
+        <TableCell className="text-right tabular-nums">{fromRateBps(slab.rateBps)}%</TableCell>
         <TableCell />
       </TableRow>
     );
@@ -104,14 +115,16 @@ function SlabRow({
         <UptoInput
           key={`u-${inputKey}`}
           form={formId}
-          defaultValue={saveState.error ? (saveState.values?.uptoAmount ?? "") : slab.uptoAmount}
+          defaultValue={saveState.error ? (saveState.values?.uptoAmount ?? "") : uptoRupees(slab)}
         />
       </TableCell>
       <TableCell className="text-right">
         <RateInput
           key={`r-${inputKey}`}
           form={formId}
-          defaultValue={saveState.error ? (saveState.values?.ratePercent ?? "") : slab.ratePercent}
+          defaultValue={
+            saveState.error ? (saveState.values?.ratePercent ?? "") : fromRateBps(slab.rateBps)
+          }
         />
       </TableCell>
       <TableCell className="text-right">
@@ -179,7 +192,7 @@ function withLowerBounds(slabs: Slab[]): { slab: Slab; previousUpto: number }[] 
   let previousUpto = 0;
   for (const slab of slabs) {
     rows.push({ slab, previousUpto });
-    previousUpto = slab.uptoAmount ?? previousUpto;
+    previousUpto = uptoRupees(slab) ?? previousUpto;
   }
   return rows;
 }

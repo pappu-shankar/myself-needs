@@ -39,9 +39,12 @@ export function createGoal(entry: NewGoal) {
       throw new DomainError("Goal target date must be a valid calendar date.");
     }
   }
+  // A non-integer here means a caller passed major units straight through
+  // instead of converting with `toMinor` at the action boundary — the float
+  // would round silently on the way into an integer column.
   if (
-    entry.targetAmount != null &&
-    (!Number.isFinite(entry.targetAmount) || entry.targetAmount <= 0)
+    entry.targetAmountMinor != null &&
+    (!Number.isInteger(entry.targetAmountMinor) || entry.targetAmountMinor <= 0)
   ) {
     throw new DomainError("Goal target amount must be greater than zero.");
   }

@@ -20,8 +20,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { FormField, FormFieldAction } from "@/components/ui/form-field";
 import { Button } from "@/components/ui/button";
+import { MoneyFigure } from "../_components/money";
 
-type TargetRow = ReturnType<typeof getAllocationReport>[number];
+type TargetRow = ReturnType<typeof getAllocationReport>["rows"][number];
+type Report = ReturnType<typeof getAllocationReport>;
 type Settings = ReturnType<typeof getFinanceSettings>;
 
 const CLASS_LABELS: Record<TargetRow["assetClass"], string> = {
@@ -111,13 +113,7 @@ function TargetRowForm({ row }: { row: TargetRow }) {
   );
 }
 
-export function AllocationSection({
-  targets,
-  settings,
-}: {
-  targets: TargetRow[];
-  settings: Settings;
-}) {
+export function AllocationSection({ report, settings }: { report: Report; settings: Settings }) {
   return (
     <Card>
       <CardHeader>
@@ -128,6 +124,17 @@ export function AllocationSection({
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <DateOfBirthForm settings={settings} />
+        {!report.netWorth.complete ? (
+          <p role="status" className="text-destructive text-sm">
+            Current split is not shown: net worth is missing a currency conversion rate, so the
+            percentages would be wrong. Net worth so far:{" "}
+            <MoneyFigure aggregate={report.netWorth} />.
+          </p>
+        ) : report.netWorth.baseMinor <= 0 ? (
+          <p role="status" className="text-muted-foreground text-sm">
+            Current split is not shown while net worth is zero or negative.
+          </p>
+        ) : null}
         <Table>
           <TableHeader>
             <TableRow>
@@ -138,7 +145,7 @@ export function AllocationSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {targets.map((row) => (
+            {report.rows.map((row) => (
               <TargetRowForm key={row.assetClass} row={row} />
             ))}
           </TableBody>

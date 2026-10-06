@@ -5,7 +5,7 @@ import {
   getCategories,
   getTransactionsCount,
   getBudgetsForMonth,
-  getTotalBalance,
+  getNetWorth,
   getNetWorthTrend,
   getInsights,
   getFinanceSettings,
@@ -13,6 +13,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NavCard } from "@/components/ui/nav-card";
+import { MoneyFigure } from "./_components/money";
 import { NetWorthChart } from "./net-worth-chart";
 import { InsightsBanner } from "./insights-banner";
 import { GettingStartedChecklist } from "./getting-started-checklist";
@@ -20,10 +21,6 @@ import { GettingStartedChecklist } from "./getting-started-checklist";
 export const metadata: Metadata = {
   title: "Finance — Personal Life OS",
 };
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 const NAV_ITEMS = [
   {
@@ -99,7 +96,7 @@ export default async function FinancePage() {
   const categories = getCategories();
   const transactionCount = getTransactionsCount();
   const budgets = getBudgetsForMonth();
-  const totalBalance = getTotalBalance();
+  const totalBalance = getNetWorth();
   const netWorthTrend = getNetWorthTrend();
   const insights = getInsights();
   const settings = getFinanceSettings();
@@ -163,7 +160,9 @@ export default async function FinancePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="tabular-nums text-2xl font-semibold">{formatAmount(totalBalance)}</p>
+            <p className="tabular-nums text-2xl font-semibold">
+              <MoneyFigure aggregate={totalBalance} />
+            </p>
           </CardContent>
         </Card>
         <Card>

@@ -10,46 +10,53 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { formatMoney, formatMoneyAmount, toMinor } from "@/lib/format";
 
 export interface LoanForAmortization {
   id: number;
   name: string;
-  outstandingBalance: number;
-  annualInterestRate: number;
-  emiAmount: number;
+  /** The loan's currency — the schedule, the EMI and the extra payment are all
+   * in it, so nothing here converts. */
+  currency: string;
+  outstandingBalanceMinor: number;
+  /** Annual rate in integer basis points. */
+  rateBps: number;
+  emiMinor: number;
 }
 
-const columns: DataTableColumnDef<AmortizationRow>[] = [
-  { accessorKey: "period", header: "EMI #", meta: { width: "80px" } },
-  {
-    accessorKey: "openingBalance",
-    header: "Opening balance",
-    meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
-  },
-  {
-    accessorKey: "interest",
-    header: "Interest",
-    meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
-  },
-  {
-    accessorKey: "principal",
-    header: "Principal",
-    meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
-  },
-  {
-    accessorKey: "closingBalance",
-    header: "Closing balance",
-    meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
-  },
-];
+/** The schedule is entirely in one loan's own currency, so the column
+ * formatter is built once per selected loan rather than carrying a currency on
+ * every row. */
+function buildColumns(currency: string): DataTableColumnDef<AmortizationRow>[] {
+  const amount = (minor: number) => formatMoneyAmount({ minor, currency });
+  return [
+    { accessorKey: "period", header: "EMI #", meta: { width: "80px" } },
+    {
+      accessorKey: "openingBalanceMinor",
+      header: "Opening balance",
+      meta: { align: "right" },
+      cell: ({ getValue }) => amount(getValue<number>()),
+    },
+    {
+      accessorKey: "interestMinor",
+      header: "Interest",
+      meta: { align: "right" },
+      cell: ({ getValue }) => amount(getValue<number>()),
+    },
+    {
+      accessorKey: "principalMinor",
+      header: "Principal",
+      meta: { align: "right" },
+      cell: ({ getValue }) => amount(getValue<number>()),
+    },
+    {
+      accessorKey: "closingBalanceMinor",
+      header: "Closing balance",
+      meta: { align: "right" },
+      cell: ({ getValue }) => amount(getValue<number>()),
+    },
+  ];
+}
 
 /**
  * Prepayment-impact sandbox reusing the exact same `service/loans.ts`
@@ -59,34 +66,41 @@ const columns: DataTableColumnDef<AmortizationRow>[] = [
  */
 export function LoanAmortization({ loans }: { loans: LoanForAmortization[] }) {
   const [selectedId, setSelectedId] = useState<number | undefined>(loans[0]?.id);
+  /** What the user typed, in major units — the input is a rupee-style field. */
   const [extraPayment, setExtraPayment] = useState(0);
 
   const loan = loans.find((l) => l.id === selectedId);
+  // Converted once, here, at the boundary between the typed figure and the
+  // exact-integer schedule maths.
+  const extraPaymentMinor = loan ? toMinor(extraPayment, loan.currency) : 0;
+
+  const scheduleInput = useMemo(
+    () =>
+      loan
+        ? {
+            outstandingBalanceMinor: loan.outstandingBalanceMinor,
+            rateBps: loan.rateBps,
+            emiMinor: loan.emiMinor,
+          }
+        : null,
+    [loan],
+  );
 
   const impact = useMemo(() => {
-    if (!loan) return null;
-    return computePrepaymentImpact(
-      {
-        outstandingBalance: loan.outstandingBalance,
-        annualInterestRate: loan.annualInterestRate,
-        emiAmount: loan.emiAmount,
-      },
-      extraPayment,
-    );
-  }, [loan, extraPayment]);
+    if (!scheduleInput) return null;
+    return computePrepaymentImpact(scheduleInput, extraPaymentMinor);
+  }, [scheduleInput, extraPaymentMinor]);
 
   const baselineOnly = useMemo(() => {
-    if (!loan || extraPayment > 0) return null;
-    return computeAmortizationSchedule({
-      outstandingBalance: loan.outstandingBalance,
-      annualInterestRate: loan.annualInterestRate,
-      emiAmount: loan.emiAmount,
-    });
-  }, [loan, extraPayment]);
+    if (!scheduleInput || extraPaymentMinor > 0) return null;
+    return computeAmortizationSchedule(scheduleInput);
+  }, [scheduleInput, extraPaymentMinor]);
+
+  const columns = useMemo(() => buildColumns(loan?.currency ?? "INR"), [loan?.currency]);
 
   if (loans.length === 0) return null;
 
-  const schedule = extraPayment > 0 ? (impact?.withExtra ?? []) : (baselineOnly ?? []);
+  const schedule = extraPaymentMinor > 0 ? (impact?.withExtra ?? []) : (baselineOnly ?? []);
   const notAmortizing = schedule.length >= 600;
 
   return (
@@ -134,11 +148,11 @@ export function LoanAmortization({ loans }: { loans: LoanForAmortization[] }) {
           </p>
         ) : (
           <>
-            {extraPayment > 0 && impact && (
+            {extraPaymentMinor > 0 && impact && loan && (
               <p className="text-sm">
                 Saves{" "}
                 <span className="tabular-nums font-medium">
-                  {formatAmount(impact.interestSaved)}
+                  {formatMoney({ minor: impact.interestSavedMinor, currency: loan.currency })}
                 </span>{" "}
                 in interest and{" "}
                 <span className="tabular-nums font-medium">{impact.monthsSaved}</span> month

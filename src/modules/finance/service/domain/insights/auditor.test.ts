@@ -30,13 +30,13 @@ function todayStr() {
 
 describe("implausibleBalanceRule", () => {
   it("fires for a cash account driven negative by transactions", () => {
-    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalance: 0 });
+    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Misc", type: "expense" });
     createTransaction({
       type: "expense",
       accountId: wallet.id,
       categoryId: category.id,
-      amount: 50,
+      amountMinor: 5000,
       date: todayStr(),
     });
 
@@ -48,7 +48,7 @@ describe("implausibleBalanceRule", () => {
   });
 
   it("does not fire for a positive-balance cash account", () => {
-    createAccount({ name: "Wallet", type: "cash", openingBalance: 100 });
+    createAccount({ name: "Wallet", type: "cash", openingBalanceMinor: 10000 });
     expect(implausibleBalanceRule(getFinanceSnapshot())).toHaveLength(0);
   });
 });
@@ -61,21 +61,21 @@ describe("duplicateTransactionsRule", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 15000,
+      amountMinor: 1500000,
       date: todayStr(),
     });
     createTransaction({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 15000,
+      amountMinor: 1500000,
       date: todayStr(),
     });
 
     const insights = duplicateTransactionsRule(getFinanceSnapshot());
 
     expect(insights).toHaveLength(1);
-    expect(insights[0].id).toBe(`duplicate-transaction:${account.id}:15000:${todayStr()}`);
+    expect(insights[0].id).toBe(`duplicate-transaction:${account.id}:1500000:${todayStr()}`);
   });
 
   it("does not fire for a single transaction", () => {
@@ -85,7 +85,7 @@ describe("duplicateTransactionsRule", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 15000,
+      amountMinor: 1500000,
       date: todayStr(),
     });
 
@@ -96,8 +96,8 @@ describe("duplicateTransactionsRule", () => {
 describe("uncategorizedTransactionsRule", () => {
   it("fires once, counting every uncategorized income/expense transaction", () => {
     const account = createAccount({ name: "Checking", type: "checking" });
-    createTransaction({ type: "expense", accountId: account.id, amount: 20, date: todayStr() });
-    createTransaction({ type: "income", accountId: account.id, amount: 30, date: todayStr() });
+    createTransaction({ type: "expense", accountId: account.id, amountMinor: 2000, date: todayStr() });
+    createTransaction({ type: "income", accountId: account.id, amountMinor: 3000, date: todayStr() });
 
     const insights = uncategorizedTransactionsRule(getFinanceSnapshot());
 
@@ -111,7 +111,7 @@ describe("uncategorizedTransactionsRule", () => {
       type: "transfer",
       accountId: checking.id,
       toAccountId: savings.id,
-      amount: 100,
+      amountMinor: 10000,
       date: todayStr(),
     });
 
@@ -132,7 +132,7 @@ describe("staleValuationRule", () => {
 
   it("fires when the latest valuation is older than the stale-valuation threshold (default 90 days)", () => {
     const holding = createHolding({ type: "equity", name: "Acme Corp" });
-    createValuation({ holdingId: holding.id, date: daysAgo(120), pricePerUnit: 50 });
+    createValuation({ holdingId: holding.id, date: daysAgo(120), priceScaled: 50000000 });
 
     const insights = staleValuationRule(getFinanceSnapshot());
 
@@ -143,7 +143,7 @@ describe("staleValuationRule", () => {
 
   it("does not fire when the latest valuation is recent", () => {
     const holding = createHolding({ type: "equity", name: "Acme Corp" });
-    createValuation({ holdingId: holding.id, date: daysAgo(10), pricePerUnit: 50 });
+    createValuation({ holdingId: holding.id, date: daysAgo(10), priceScaled: 50000000 });
 
     expect(staleValuationRule(getFinanceSnapshot())).toHaveLength(0);
   });
@@ -157,7 +157,7 @@ describe("recurringPileupRule", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100000,
       frequency: "monthly",
       startDate: monthsAgo(6),
     });
@@ -175,7 +175,7 @@ describe("recurringPileupRule", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100000,
       frequency: "monthly",
       startDate: monthsAgo(1),
     });

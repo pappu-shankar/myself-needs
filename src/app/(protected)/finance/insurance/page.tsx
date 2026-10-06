@@ -15,15 +15,12 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/format";
 import { AddInsuranceDialog } from "./add-insurance-dialog";
 
 export const metadata: Metadata = {
   title: "Insurance — Personal Life OS",
 };
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default async function InsurancePage() {
   await requireUser();
@@ -76,7 +73,7 @@ export default async function InsurancePage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground capitalize">{p.type}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatAmount(p.premiumAmount)}
+                      {formatMoney({ minor: p.premiumAmountMinor, currency: p.currency })}
                     </TableCell>
                     <TableCell className="text-muted-foreground capitalize">
                       {p.premiumFrequency.replace("_", "-")}

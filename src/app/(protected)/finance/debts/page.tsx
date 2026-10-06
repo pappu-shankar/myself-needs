@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
-import { getAccounts } from "@/modules/finance";
+import { getAccounts, getDebtTermsByAccount } from "@/modules/finance";
 import { getCreditUtilization } from "@/modules/finance/service/utility/loans";
+import { Money } from "../_components/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -21,29 +22,66 @@ export const metadata: Metadata = {
   title: "Debts — Personal Life OS",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export default async function DebtsPage() {
   await requireUser();
   const accounts = getAccounts();
-  const creditCards = accounts.filter((a) => a.type === "credit_card");
+  // Rate and limit moved off the account row into the terms satellites in
+  // migration 0028, so they are read once for the whole page rather than per
+  // row. See db/queries/domain/accounts.ts.
+  const terms = getDebtTermsByAccount();
+  const creditCards = accounts.filter(
+    (a) => a.type === "credit_card" || a.type === "revolving_credit",
+  );
   const loans = accounts.filter((a) => a.type === "loan");
 
-  const totalOwed = creditCards.reduce((sum, c) => sum + Math.abs(c.balance), 0);
-  const totalLimit = creditCards.reduce((sum, c) => sum + (c.creditLimit ?? 0), 0);
-  const overallUtilization = getCreditUtilization(totalOwed, totalLimit);
+  /**
+   * A utilization figure is only produced when the balance and the limit are in
+   * the same currency. A limit recorded in one currency against a balance in
+   * another would need a rate this page was never given, and a percentage is
+   * exactly the kind of number that looks authoritative while being nonsense.
+   */
+  const utilizationOf = (accountCurrency: string, owedMinor: number, accountId: number) => {
+    const t = terms.get(accountId);
+    if (!t?.creditLimitMinor || t.limitCurrency !== accountCurrency) return null;
+    return getCreditUtilization(owedMinor, t.creditLimitMinor);
+  };
 
-  const amortizableLoans = loans
-    .filter((l) => l.interestRate != null && l.emiAmount != null && Math.abs(l.balance) > 0)
-    .map((l) => ({
-      id: l.id,
-      name: l.name,
-      outstandingBalance: Math.abs(l.balance),
-      annualInterestRate: l.interestRate!,
-      emiAmount: l.emiAmount!,
-    }));
+  // Overall utilization is per currency for the same reason: summing limits
+  // across currencies would invent a total nobody holds.
+  const owedByCurrency = new Map<string, number>();
+  const limitByCurrency = new Map<string, number>();
+  for (const card of creditCards) {
+    const owed = Math.abs(card.balanceMinor);
+    owedByCurrency.set(card.currency, (owedByCurrency.get(card.currency) ?? 0) + owed);
+    const t = terms.get(card.id);
+    if (t?.creditLimitMinor && t.limitCurrency === card.currency) {
+      limitByCurrency.set(
+        card.currency,
+        (limitByCurrency.get(card.currency) ?? 0) + t.creditLimitMinor,
+      );
+    }
+  }
+  const overallUtilization = [...limitByCurrency.entries()]
+    .map(([currency, limitMinor]) => ({
+      currency,
+      percent: getCreditUtilization(owedByCurrency.get(currency) ?? 0, limitMinor),
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+
+  const amortizableLoans = loans.flatMap((loan) => {
+    const t = terms.get(loan.id);
+    if (!t?.rateBps || !t.emiMinor || Math.abs(loan.balanceMinor) === 0) return [];
+    return [
+      {
+        id: loan.id,
+        name: loan.name,
+        currency: loan.currency,
+        outstandingBalanceMinor: Math.abs(loan.balanceMinor),
+        rateBps: t.rateBps,
+        emiMinor: t.emiMinor,
+      },
+    ];
+  });
 
   return (
     <>
@@ -88,33 +126,55 @@ export default async function DebtsPage() {
                 </TableHeader>
                 <TableBody>
                   {creditCards.map((c) => {
-                    const owed = Math.abs(c.balance);
-                    const utilization = getCreditUtilization(owed, c.creditLimit ?? 0);
+                    const owed = Math.abs(c.balanceMinor);
+                    const limitMinor = terms.get(c.id)?.creditLimitMinor ?? null;
+                    const utilization = utilizationOf(c.currency, owed, c.id);
                     return (
                       <TableRow key={c.id}>
                         <TableCell>{c.name}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatAmount(owed)}
+                          <Money minor={owed} currency={c.currency} />
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatAmount(c.creditLimit ?? 0)}
+                          {limitMinor === null ? (
+                            <span className="text-muted-foreground">Not set</span>
+                          ) : (
+                            <Money
+                              minor={limitMinor}
+                              currency={terms.get(c.id)?.limitCurrency ?? c.currency}
+                            />
+                          )}
                         </TableCell>
                         <TableCell
-                          className={`text-right tabular-nums ${utilization > 100 ? "text-destructive" : ""}`}
+                          className={`text-right tabular-nums ${
+                            utilization !== null && utilization > 100 ? "text-destructive" : ""
+                          }`}
                         >
-                          {utilization.toFixed(0)}%
+                          {utilization === null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            `${utilization.toFixed(0)}%`
+                          )}
                         </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
-              <p className="text-muted-foreground mt-4 text-sm">
-                Overall utilization across all cards:{" "}
-                <span className="text-foreground tabular-nums font-medium">
-                  {overallUtilization.toFixed(0)}%
-                </span>
-              </p>
+              {overallUtilization.length > 0 && (
+                <p className="text-muted-foreground mt-4 text-sm">
+                  Overall utilization across all cards:{" "}
+                  {overallUtilization.map(({ currency, percent }, i) => (
+                    <span key={currency}>
+                      {i > 0 && ", "}
+                      <span className="text-foreground tabular-nums font-medium">
+                        {percent.toFixed(0)}%
+                      </span>
+                      {overallUtilization.length > 1 && ` (${currency})`}
+                    </span>
+                  ))}
+                </p>
+              )}
             </>
           )}
         </CardContent>
@@ -151,24 +211,41 @@ export default async function DebtsPage() {
               </TableHeader>
               <TableBody>
                 {loans.map((l) => {
-                  const outstanding = Math.abs(l.balance);
-                  const progress = l.originalAmount
-                    ? ((l.originalAmount - outstanding) / l.originalAmount) * 100
-                    : 0;
+                  const outstanding = Math.abs(l.balanceMinor);
+                  const t = terms.get(l.id);
+                  // Progress needs the original amount; without it there is
+                  // nothing to measure against, so it shows as unknown rather
+                  // than as 0% paid off.
+                  const progress =
+                    t?.originalAmountMinor && t.originalAmountMinor > 0
+                      ? ((t.originalAmountMinor - outstanding) / t.originalAmountMinor) * 100
+                      : null;
                   return (
                     <TableRow key={l.id}>
                       <TableCell>{l.name}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatAmount(outstanding)}
+                        <Money minor={outstanding} currency={l.currency} />
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatAmount(l.originalAmount ?? 0)}
+                        {t?.originalAmountMinor == null ? (
+                          <span className="text-muted-foreground">Not set</span>
+                        ) : (
+                          <Money minor={t.originalAmountMinor} currency={l.currency} />
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {progress.toFixed(0)}%
+                        {progress === null ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          `${progress.toFixed(0)}%`
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatAmount(l.emiAmount ?? 0)}
+                        {t?.emiMinor == null ? (
+                          <span className="text-muted-foreground">Not set</span>
+                        ) : (
+                          <Money minor={t.emiMinor} currency={l.currency} />
+                        )}
                       </TableCell>
                     </TableRow>
                   );

@@ -1,10 +1,9 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { recurringRules } from "./recurring-rules";
 import { entities } from "./entities";
 import { institutions } from "./institutions";
-import { currencyColumn } from "../currency";
+import { currencyColumn, minorAmount } from "../currency";
 import { provenanceColumns } from "../provenance";
 import { archivableColumns } from "../lifecycle";
 
@@ -27,8 +26,8 @@ export const insurancePolicies = sqliteTable("finance_insurance_policies", {
   currency: currencyColumn(),
   name: text("name").notNull(),
   policyNumber: text("policy_number"),
-  sumAssured: money("sum_assured"),
-  premiumAmount: money("premium_amount").notNull(),
+  sumAssuredMinor: minorAmount("sum_assured_minor"),
+  premiumAmountMinor: minorAmount("premium_amount_minor").notNull(),
   premiumFrequency: text("premium_frequency", {
     enum: ["weekly", "monthly", "quarterly", "half_yearly", "yearly"],
   }).notNull(),

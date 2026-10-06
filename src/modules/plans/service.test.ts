@@ -31,11 +31,31 @@ describe("plans service", () => {
       name: "Goal",
       type: "financial",
       priority: "must_have",
-      targetAmount: 1000,
+      targetAmountMinor: 100_000,
+      currency: "INR",
     });
 
-    expect(getGoalById(created.id)).toMatchObject({ name: "Goal", targetAmount: 1000 });
+    expect(getGoalById(created.id)).toMatchObject({
+      name: "Goal",
+      targetAmountMinor: 100_000,
+      currency: "INR",
+    });
     expect(getGoalById(created.id + 999)).toBeNull();
+  });
+
+  it("defaults a goal's currency to INR when none is given", () => {
+    const created = createGoal({ name: "Goal", type: "other", priority: "important" });
+
+    expect(getGoalById(created.id)?.currency).toBe("INR");
+  });
+
+  it("rejects a target amount that isn't a positive integer minor amount", () => {
+    const entry = { name: "Goal", type: "financial", priority: "must_have" } as const;
+
+    expect(() => createGoal({ ...entry, targetAmountMinor: 0 })).toThrow("greater than zero");
+    expect(() => createGoal({ ...entry, targetAmountMinor: -100 })).toThrow("greater than zero");
+    // Major units passed straight through instead of via `toMinor`.
+    expect(() => createGoal({ ...entry, targetAmountMinor: 1000.5 })).toThrow("greater than zero");
   });
 
   it("updates progress for a non-financial goal", () => {

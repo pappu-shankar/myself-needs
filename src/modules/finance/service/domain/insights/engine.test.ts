@@ -23,19 +23,19 @@ describe("getInsights", () => {
       type: "health",
       provider: "Acme",
       name: "Floater",
-      premiumAmount: 5000,
+      premiumAmountMinor: 500000,
       premiumFrequency: "yearly",
       startDate: daysAgo(400),
       renewalDate: daysAgo(10),
     });
 
-    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalance: 0 });
+    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Misc", type: "expense" });
     createTransaction({
       type: "expense",
       accountId: wallet.id,
       categoryId: category.id,
-      amount: 50,
+      amountMinor: 5000,
       date: todayStr(),
     });
 
@@ -51,13 +51,13 @@ describe("getInsights", () => {
   });
 
   it("excludes a dismissed insight by its exact id", () => {
-    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalance: 0 });
+    const wallet = createAccount({ name: "Wallet", type: "cash", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Misc", type: "expense" });
     createTransaction({
       type: "expense",
       accountId: wallet.id,
       categoryId: category.id,
-      amount: 50,
+      amountMinor: 5000,
       date: todayStr(),
     });
 

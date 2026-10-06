@@ -24,7 +24,10 @@ describe("mutualFundNavProvider", () => {
 
     await expect(mutualFundNavProvider.fetchLatestPrice("119551")).resolves.toEqual({
       date: "2024-10-26",
-      pricePerUnit: 101.2345,
+      // Scaled by PRICE_SCALE (1e6) at the provider boundary, and the feed's
+      // own currency stated rather than left for the caller to assume.
+      priceScaled: 101_234_500,
+      currency: "INR",
     });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.mfapi.in/mf/119551/latest");

@@ -14,15 +14,12 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/format";
 import { AddBudgetDialog } from "./add-budget-dialog";
 
 export const metadata: Metadata = {
   title: "Budgets — Personal Life OS",
 };
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default async function BudgetsPage() {
   await requireUser();
@@ -79,23 +76,23 @@ export default async function BudgetsPage() {
             </TableHeader>
             <TableBody>
               {budgets.map((b) => {
-                const remaining = b.monthlyLimit - b.actualSpend;
+                const remaining = b.monthlyLimitMinor - b.actualSpendMinor;
                 const isOver = remaining < 0;
                 return (
                   <TableRow key={b.categoryId}>
                     <TableCell>{b.categoryName}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatAmount(b.monthlyLimit)}
+                      {formatMoney({ minor: b.monthlyLimitMinor, currency: b.currency })}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatAmount(b.actualSpend)}
+                      {formatMoney({ minor: b.actualSpendMinor, currency: b.currency })}
                     </TableCell>
                     <TableCell
                       className={`text-right tabular-nums ${isOver ? "text-destructive" : ""}`}
                     >
                       {isOver
-                        ? `Over by ${formatAmount(Math.abs(remaining))}`
-                        : formatAmount(remaining)}
+                        ? `Over by ${formatMoney({ minor: Math.abs(remaining), currency: b.currency })}`
+                        : formatMoney({ minor: remaining, currency: b.currency })}
                     </TableCell>
                   </TableRow>
                 );

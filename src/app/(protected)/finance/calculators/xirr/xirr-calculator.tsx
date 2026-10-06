@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { toMinor } from "@/lib/format";
 import { addYears, todayIso } from "@/lib/dates";
 import { computeXirr } from "@/modules/finance/service/utility/returns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +33,9 @@ export function XirrCalculator() {
   ]);
 
   const xirr = computeXirr(
-    rows.filter((r) => r.date && r.amount !== 0).map((r) => ({ date: r.date, amount: r.amount })),
+    rows
+      .filter((r) => r.date && r.amount !== 0)
+      .map((r) => ({ date: r.date, amountMinor: toMinor(r.amount, "INR") })),
     0,
     today,
   );

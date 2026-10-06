@@ -22,4 +22,6 @@ export * from "./domain/scheme-templates";
 export * from "./domain/investment-holdings";
 export * from "./domain/investment-cash-flows";
 export * from "./domain/investment-valuations";
+export * from "./domain/goals";
+export * from "./domain/reconciliation";
 export * from "./domain/insights";

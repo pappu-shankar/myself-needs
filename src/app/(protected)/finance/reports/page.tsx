@@ -27,8 +27,8 @@ function formatPercent(rate: number | null) {
 
 export default async function ReportsPage() {
   await requireUser();
-  const { trend, categoryBreakdown, savingsRate } = getIncomeExpenseReport();
-  const emergencyFundMonths = getEmergencyFundMonths();
+  const { trend, categoryBreakdown, savingsRate, baseCurrency } = getIncomeExpenseReport();
+  const { months: emergencyFundMonths } = getEmergencyFundMonths();
   const allocation = getCurrentAllocation();
 
   return (
@@ -78,11 +78,11 @@ export default async function ReportsPage() {
       </div>
 
       <div className="mb-6">
-        <IncomeExpenseChart trend={trend} />
+        <IncomeExpenseChart trend={trend} baseCurrency={baseCurrency} />
       </div>
 
       <div className="mb-6">
-        <CategoryBreakdownChart categories={categoryBreakdown} />
+        <CategoryBreakdownChart categories={categoryBreakdown} baseCurrency={baseCurrency} />
       </div>
 
       <div>

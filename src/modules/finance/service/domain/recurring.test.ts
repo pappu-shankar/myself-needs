@@ -15,14 +15,14 @@ afterEach(teardownTestDb);
 
 describe("recurring service", () => {
   it("creates a rule and lists it", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
 
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
@@ -32,13 +32,13 @@ describe("recurring service", () => {
   });
 
   it("generates monthly periods up to today, clamping day-of-month across shorter months", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-31",
       note: "Rent",
@@ -52,13 +52,13 @@ describe("recurring service", () => {
   });
 
   it("stops generating periods once a period-start passes the rule's endDate", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       endDate: "2026-02-01",
@@ -71,13 +71,13 @@ describe("recurring service", () => {
   });
 
   it("generates weekly periods 7 days apart", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Groceries", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 50,
+      amountMinor: 5_000,
       frequency: "weekly",
       startDate: "2026-01-01",
       note: "Groceries",
@@ -103,13 +103,13 @@ describe("recurring service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T00:00:00Z"));
 
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
@@ -129,7 +129,7 @@ describe("recurring service", () => {
     const transaction = confirmRecurringOccurrence({
       ruleId: rule.id,
       periodStart: "2026-04-15",
-      amount: 1000,
+      amountMinor: 100_000,
       date: "2026-04-18",
       note: null,
     });
@@ -145,19 +145,19 @@ describe("recurring service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-20T00:00:00Z"));
 
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
     });
 
-    const input = { ruleId: rule.id, periodStart: "2026-01-15", amount: 1000, date: "2026-01-16", note: null };
+    const input = { ruleId: rule.id, periodStart: "2026-01-15", amountMinor: 100_000, date: "2026-01-16", note: null };
     confirmRecurringOccurrence(input);
 
     // A double submit / two tabs re-sending the same confirmation — the
@@ -170,13 +170,13 @@ describe("recurring service", () => {
   });
 
   it("the (recurring_rule_id, period_start) unique index blocks a duplicate at the DB level even if a caller bypasses the due-list check", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
@@ -186,7 +186,7 @@ describe("recurring service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       date: "2026-01-15",
       recurringRuleId: rule.id,
       periodStart: "2026-01-15",
@@ -200,7 +200,7 @@ describe("recurring service", () => {
         type: "expense",
         accountId: account.id,
         categoryId: category.id,
-        amount: 1000,
+        amountMinor: 100_000,
         date: "2026-01-16",
         recurringRuleId: rule.id,
         periodStart: "2026-01-15",
@@ -212,13 +212,13 @@ describe("recurring service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-20T00:00:00Z"));
 
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
@@ -230,7 +230,7 @@ describe("recurring service", () => {
       confirmRecurringOccurrence({
         ruleId: rule.id,
         periodStart: "2026-04-15",
-        amount: 1000,
+        amountMinor: 100_000,
         date: "2026-04-15",
         note: null,
       }),
@@ -243,13 +243,13 @@ describe("recurring service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-20T00:00:00Z"));
 
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Rent",
@@ -260,7 +260,7 @@ describe("recurring service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       date: "2026-01-20",
       recurringRuleId: rule.id,
     });
@@ -268,7 +268,7 @@ describe("recurring service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1000,
+      amountMinor: 100_000,
       date: "2026-02-18",
       recurringRuleId: rule.id,
     });
@@ -281,7 +281,7 @@ describe("recurring service", () => {
     confirmRecurringOccurrence({
       ruleId: rule.id,
       periodStart: "2026-04-15",
-      amount: 1000,
+      amountMinor: 100_000,
       date: "2026-04-20",
       note: null,
     });
@@ -295,7 +295,7 @@ describe("recurring service", () => {
       confirmRecurringOccurrence({
         ruleId: 999,
         periodStart: "2026-01-01",
-        amount: 100,
+        amountMinor: 10_000,
         date: "2026-01-01",
         note: null,
       }),
@@ -303,14 +303,14 @@ describe("recurring service", () => {
   });
 
   it("createRecurringRule rejects a recurring transfer whose from and to account are the same", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
 
     expect(() =>
       createRecurringRule({
         type: "transfer",
         accountId: account.id,
         toAccountId: account.id,
-        amount: 500,
+        amountMinor: 50_000,
         frequency: "monthly",
         startDate: "2026-01-01",
         note: "Self transfer",
@@ -319,7 +319,7 @@ describe("recurring service", () => {
   });
 
   it("sorts the due worklist by period start across multiple rules", () => {
-    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
     const rent = createCategory({ name: "Rent", type: "expense" });
     const internet = createCategory({ name: "Internet", type: "expense" });
 
@@ -327,7 +327,7 @@ describe("recurring service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: rent.id,
-      amount: 1000,
+      amountMinor: 100_000,
       frequency: "monthly",
       startDate: "2026-01-01",
       note: "Rent",
@@ -336,7 +336,7 @@ describe("recurring service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: internet.id,
-      amount: 50,
+      amountMinor: 5_000,
       frequency: "monthly",
       startDate: "2026-01-15",
       note: "Internet",
@@ -344,5 +344,138 @@ describe("recurring service", () => {
 
     const periodStarts = getDueWorklist("2026-01-20").map((i) => i.periodStart);
     expect(periodStarts).toEqual([...periodStarts].sort());
+  });
+  it("the due worklist carries the suggested amount in minor units with its currency", () => {
+    const account = createAccount({
+      name: "Wise USD",
+      type: "savings",
+      currency: "USD",
+      openingBalanceMinor: 0,
+    });
+    const category = createCategory({ name: "Hosting", type: "expense" });
+    createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 2_900,
+      currency: "USD",
+      frequency: "monthly",
+      startDate: "2026-01-10",
+      note: "Hosting",
+    });
+
+    const [first] = getDueWorklist("2026-01-20");
+
+    // An amount without its currency cannot be formatted at all — 2900 is
+    // $29.00, not ₹29.00 and not $2,900.
+    expect(first).toMatchObject({ suggestedAmountMinor: 2_900, currency: "USD" });
+  });
+
+  it("createRecurringRule rejects an amount that is zero, negative or not whole minor units", () => {
+    const account = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 0 });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const base = {
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      frequency: "monthly",
+      startDate: "2026-01-01",
+      note: "Rent",
+    } as const;
+
+    expect(() => createRecurringRule({ ...base, amountMinor: 0 })).toThrow(/greater than zero/);
+    expect(() => createRecurringRule({ ...base, amountMinor: -1 })).toThrow(/greater than zero/);
+    expect(() => createRecurringRule({ ...base, amountMinor: 100.5 })).toThrow(/greater than zero/);
+  });
+
+  it("a cross-currency recurring rule must state both legs", () => {
+    const from = createAccount({ name: "HDFC", type: "savings", openingBalanceMinor: 0 });
+    const to = createAccount({
+      name: "Wise USD",
+      type: "savings",
+      currency: "USD",
+      openingBalanceMinor: 0,
+    });
+
+    expect(() =>
+      createRecurringRule({
+        type: "transfer",
+        accountId: from.id,
+        toAccountId: to.id,
+        amountMinor: 830_000,
+        toCurrency: "USD",
+        frequency: "monthly",
+        startDate: "2026-01-01",
+        note: "Monthly USD top-up",
+      }),
+    ).toThrow(/both the amount sent and received/);
+
+    const rule = createRecurringRule({
+      type: "transfer",
+      accountId: from.id,
+      toAccountId: to.id,
+      amountMinor: 830_000,
+      toAmountMinor: 10_000,
+      toCurrency: "USD",
+      frequency: "monthly",
+      startDate: "2026-01-01",
+      note: "Monthly USD top-up",
+    });
+
+    expect(rule).toMatchObject({ toAmountMinor: 10_000, toCurrency: "USD" });
+  });
+
+  it("confirming a cross-currency rule records what actually landed, and refuses to guess it", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-20T00:00:00Z"));
+
+    const from = createAccount({ name: "HDFC", type: "savings", openingBalanceMinor: 0 });
+    const to = createAccount({
+      name: "Wise USD",
+      type: "savings",
+      currency: "USD",
+      openingBalanceMinor: 0,
+    });
+    const rule = createRecurringRule({
+      type: "transfer",
+      accountId: from.id,
+      toAccountId: to.id,
+      amountMinor: 830_000,
+      toAmountMinor: 10_000,
+      toCurrency: "USD",
+      frequency: "monthly",
+      startDate: "2026-01-15",
+      note: "Monthly USD top-up",
+    });
+
+    // Deriving the incoming leg from a reference rate would record a figure
+    // the bank never moved, so omitting it is an error rather than a default.
+    expect(() =>
+      confirmRecurringOccurrence({
+        ruleId: rule.id,
+        periodStart: "2026-01-15",
+        amountMinor: 830_000,
+        date: "2026-01-16",
+        note: null,
+      }),
+    ).toThrow(/amount received/);
+
+    const transaction = confirmRecurringOccurrence({
+      ruleId: rule.id,
+      periodStart: "2026-01-15",
+      amountMinor: 831_500,
+      toAmountMinor: 9_980, // what the bank actually credited, not 830000/83
+      date: "2026-01-16",
+      note: null,
+    });
+
+    expect(transaction).toMatchObject({
+      amountMinor: 831_500,
+      currency: "INR",
+      toAmountMinor: 9_980,
+      toCurrency: "USD",
+    });
+
+    vi.useRealTimers();
   });
 });

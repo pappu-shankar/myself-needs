@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { investmentHoldings } from "./investment-holdings";
 import { currencyColumn } from "../currency";
@@ -18,7 +18,10 @@ export const investmentValuations = sqliteTable(
       .notNull()
       .references(() => investmentHoldings.id),
     date: text("date").notNull(),
-    pricePerUnit: real("price_per_unit").notNull(),
+    /** Price per unit scaled by `PRICE_SCALE` (1e6). The `units_scaled ×
+     * price_scaled` product overflows 2^53 at realistic position sizes, so it
+     * is multiplied in BigInt inside `valueOfUnits()`. */
+    priceScaled: integer("price_scaled").notNull(),
     priceCurrency: currencyColumn("price_currency"),
 
     /** Defaults to `unknown`, not `manual`: in pre-existing data a refreshed

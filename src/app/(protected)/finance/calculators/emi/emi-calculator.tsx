@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toMajor, toMinor } from "@/lib/format";
+import { toRateBps } from "@/modules/finance/service/utility/units";
 import {
   computeAmortizationSchedule,
   computeEmiAmount,
@@ -12,32 +14,39 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// The calculator is a what-if over typed major-unit numbers; it converts to
+// minor units / basis points only at the shared helpers' boundary.
+const CURRENCY = "INR";
+
+function formatAmount(minor: number) {
+  return toMajor(minor, CURRENCY).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 const columns: DataTableColumnDef<AmortizationRow>[] = [
   { accessorKey: "period", header: "EMI #", meta: { width: "80px" } },
   {
-    accessorKey: "openingBalance",
+    accessorKey: "openingBalanceMinor",
     header: "Opening balance",
     meta: { align: "right" },
     cell: ({ getValue }) => formatAmount(getValue<number>()),
   },
   {
-    accessorKey: "interest",
+    accessorKey: "interestMinor",
     header: "Interest",
     meta: { align: "right" },
     cell: ({ getValue }) => formatAmount(getValue<number>()),
   },
   {
-    accessorKey: "principal",
+    accessorKey: "principalMinor",
     header: "Principal",
     meta: { align: "right" },
     cell: ({ getValue }) => formatAmount(getValue<number>()),
   },
   {
-    accessorKey: "closingBalance",
+    accessorKey: "closingBalanceMinor",
     header: "Closing balance",
     meta: { align: "right" },
     cell: ({ getValue }) => formatAmount(getValue<number>()),
@@ -51,29 +60,31 @@ export function EmiCalculator() {
   const [tenureMonths, setTenureMonths] = useState(240);
   const [extraPayment, setExtraPayment] = useState(0);
 
-  const emiAmount = computeEmiAmount(principal, annualRate, tenureMonths);
+  const principalMinor = toMinor(principal, CURRENCY);
+  const rateBps = toRateBps(annualRate);
+  const emiMinor = computeEmiAmount(principalMinor, rateBps, tenureMonths);
 
   const impact = useMemo(
     () =>
       computePrepaymentImpact(
-        { outstandingBalance: principal, annualInterestRate: annualRate, emiAmount },
-        extraPayment,
+        { outstandingBalanceMinor: principalMinor, rateBps, emiMinor },
+        toMinor(extraPayment, CURRENCY),
       ),
-    [principal, annualRate, emiAmount, extraPayment],
+    [principalMinor, rateBps, emiMinor, extraPayment],
   );
 
   const baselineOnly = useMemo(
     () =>
       computeAmortizationSchedule({
-        outstandingBalance: principal,
-        annualInterestRate: annualRate,
-        emiAmount,
+        outstandingBalanceMinor: principalMinor,
+        rateBps,
+        emiMinor,
       }),
-    [principal, annualRate, emiAmount],
+    [principalMinor, rateBps, emiMinor],
   );
 
   const schedule = extraPayment > 0 ? impact.withExtra : baselineOnly;
-  const totalInterest = schedule.reduce((sum, row) => sum + row.interest, 0);
+  const totalInterest = schedule.reduce((sum, row) => sum + row.interestMinor, 0);
 
   return (
     <Card>
@@ -135,7 +146,7 @@ export function EmiCalculator() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="text-muted-foreground text-sm">EMI amount</p>
-            <p className="tabular-nums text-xl font-semibold">{formatAmount(emiAmount)}</p>
+            <p className="tabular-nums text-xl font-semibold">{formatAmount(emiMinor)}</p>
           </div>
           <div>
             <p className="text-muted-foreground text-sm">Total interest over tenure</p>
@@ -146,7 +157,9 @@ export function EmiCalculator() {
         {extraPayment > 0 && (
           <p className="text-sm">
             Saves{" "}
-            <span className="tabular-nums font-medium">{formatAmount(impact.interestSaved)}</span>{" "}
+            <span className="tabular-nums font-medium">
+              {formatAmount(impact.interestSavedMinor)}
+            </span>{" "}
             in interest and <span className="tabular-nums font-medium">{impact.monthsSaved}</span>{" "}
             month{impact.monthsSaved === 1 ? "" : "s"} of tenure.
           </p>

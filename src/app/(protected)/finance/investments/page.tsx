@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
-import { getHoldingsWithValue, getPortfolioXirr } from "@/modules/finance";
+import { getHoldingsWithValue, getPortfolioXirrByCurrency } from "@/modules/finance";
+import { formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,10 +12,6 @@ export const metadata: Metadata = {
   title: "Investments — Personal Life OS",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function formatPercent(rate: number | null) {
   return rate === null ? "—" : `${(rate * 100).toFixed(1)}%`;
 }
@@ -22,8 +19,19 @@ function formatPercent(rate: number | null) {
 export default async function InvestmentsPage() {
   await requireUser();
   const holdings = getHoldingsWithValue();
-  const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
-  const portfolioXirr = getPortfolioXirr();
+  // Per currency, not one total: a portfolio holding both rupee and dollar
+  // positions has no single value without a rate, and an XIRR is a rate of
+  // return on one currency's cash flows.
+  const totalsByCurrency = new Map<string, number>();
+  for (const h of holdings) {
+    totalsByCurrency.set(h.currency, (totalsByCurrency.get(h.currency) ?? 0) + h.currentValueMinor);
+  }
+  const totals = [...totalsByCurrency.entries()]
+    .map(([currency, minor]) => ({ currency, minor }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+  const xirrByCurrency = [...getPortfolioXirrByCurrency().entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
   const unvalued = holdings.filter((h) => h.missing !== null).length;
   const maturedUnpaid = holdings.filter((h) => h.maturedOn !== null).length;
 
@@ -47,7 +55,15 @@ export default async function InvestmentsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="tabular-nums text-2xl font-semibold">{formatAmount(totalValue)}</p>
+            {totals.length === 0 ? (
+              <p className="tabular-nums text-2xl font-semibold">—</p>
+            ) : (
+              totals.map(({ currency, minor }) => (
+                <p key={currency} className="tabular-nums text-2xl font-semibold">
+                  {formatMoney({ minor, currency })}
+                </p>
+              ))
+            )}
             {unvalued > 0 && (
               <p className="text-muted-foreground mt-1 text-xs">
                 {unvalued} holding{unvalued === 1 ? "" : "s"} not valued yet (missing units or
@@ -69,7 +85,18 @@ export default async function InvestmentsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="tabular-nums text-2xl font-semibold">{formatPercent(portfolioXirr)}</p>
+            {xirrByCurrency.length === 0 ? (
+              <p className="tabular-nums text-2xl font-semibold">—</p>
+            ) : (
+              xirrByCurrency.map(([currency, xirr]) => (
+                <p key={currency} className="tabular-nums text-2xl font-semibold">
+                  {formatPercent(xirr)}
+                  {xirrByCurrency.length > 1 && (
+                    <span className="text-muted-foreground ml-1 text-xs">{currency}</span>
+                  )}
+                </p>
+              ))
+            )}
           </CardContent>
         </Card>
         <Card>

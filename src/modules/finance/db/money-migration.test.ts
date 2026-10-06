@@ -7,7 +7,7 @@ import Database from "better-sqlite3-multiple-ciphers";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { attachDatabase, closeDatabase } from "@/modules/core/db/client";
-import { getAccountBalance, listAccountsWithBalances } from "./queries/domain/accounts";
+import { getAccountBalanceMinor, listAccountsWithBalances } from "./queries/domain/accounts";
 
 const MONEY_MIGRATION = "0023_common_albert_cleary";
 const tmp = path.join(process.cwd(), ".vitest-tmp", randomUUID());
@@ -36,7 +36,7 @@ describe("REAL rupees → INTEGER paise migration", () => {
 
     connection
       .prepare(
-        "INSERT INTO finance_accounts (id, name, type, opening_balance, credit_limit) VALUES (1, 'Cash', 'cash', 0.3, NULL), (2, 'Bank', 'savings', 1234.56, 50000.1)",
+        "INSERT INTO finance_accounts (id, name, type, opening_balance, credit_limit) VALUES (1, 'Cash', 'cash', 0.3, NULL), (2, 'Bank', 'savings', 1234.56, NULL), (3, 'Card', 'credit_card', 0, 50000.1)",
       )
       .run();
     const insertTx = connection.prepare(
@@ -60,14 +60,19 @@ describe("REAL rupees → INTEGER paise migration", () => {
     connection.pragma("foreign_keys = ON");
 
     const raw = connection
-      .prepare("SELECT id, opening_balance, credit_limit FROM finance_accounts ORDER BY id")
+      .prepare("SELECT id, opening_balance_minor FROM finance_accounts ORDER BY id")
       .all();
     expect(raw).toEqual([
-      { id: 1, opening_balance: 30, credit_limit: null },
-      { id: 2, opening_balance: 123456, credit_limit: 5000010 },
+      { id: 1, opening_balance_minor: 30 },
+      { id: 2, opening_balance_minor: 123456 },
+      { id: 3, opening_balance_minor: 0 },
     ]);
+    // The credit limit left the account row for the credit-terms satellite, still exact.
+    expect(
+      connection.prepare("SELECT account_id, credit_limit_minor FROM finance_credit_terms").all(),
+    ).toEqual([{ account_id: 3, credit_limit_minor: 5000010 }]);
     const amounts = connection
-      .prepare("SELECT amount, typeof(amount) AS t FROM finance_transactions ORDER BY id")
+      .prepare("SELECT amount_minor AS amount, typeof(amount_minor) AS t FROM finance_transactions ORDER BY id")
       .all();
     expect(amounts).toEqual([
       { amount: 10, t: "integer" },
@@ -76,15 +81,15 @@ describe("REAL rupees → INTEGER paise migration", () => {
     ]);
 
     // Duplicate budgets (same category + start) collapse to the newest instead of failing the upgrade.
-    expect(connection.prepare("SELECT id, monthly_limit FROM finance_budgets").all()).toEqual([
-      { id: 2, monthly_limit: 600050 },
+    expect(connection.prepare("SELECT id, monthly_limit_minor FROM finance_budgets").all()).toEqual([
+      { id: 2, monthly_limit_minor: 600050 },
     ]);
 
     attachDatabase(connection);
     // 0.30 − 0.10 − 0.20 + 99.99: exactly 99.99, never 99.98999999 or −2.8e-17.
-    expect(getAccountBalance(1)).toBe(99.99);
-    expect(getAccountBalance(2)).toBe(1134.57);
-    expect(listAccountsWithBalances().map((a) => a.balance)).toEqual([1134.57, 99.99]);
+    expect(getAccountBalanceMinor(1)).toBe(9999);
+    expect(getAccountBalanceMinor(2)).toBe(113457);
+    expect(listAccountsWithBalances().map((a) => a.balanceMinor)).toEqual([113457, 0, 9999]);
     expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 });

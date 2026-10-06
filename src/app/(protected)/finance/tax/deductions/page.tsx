@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { currentFiscalYear, get80cUtilization, get80dUtilization } from "@/modules/finance";
-import { formatAmount } from "@/lib/format";
+import { STATUTORY_CURRENCY } from "@/modules/finance/service/config/tax";
+import { Money, MoneyFigure } from "../../_components/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,9 +57,9 @@ export default async function TaxDeductionsPage({
           </CardHeader>
           <CardContent>
             <p className="tabular-nums text-2xl font-semibold">
-              {formatAmount(eightyC.used)}{" "}
+              <MoneyFigure aggregate={eightyC.used} />{" "}
               <span className="text-muted-foreground text-base font-normal">
-                / {formatAmount(eightyC.limit)}
+                / <Money minor={eightyC.limitMinor} currency={STATUTORY_CURRENCY} />
               </span>
             </p>
           </CardContent>
@@ -74,9 +75,9 @@ export default async function TaxDeductionsPage({
           </CardHeader>
           <CardContent>
             <p className="tabular-nums text-2xl font-semibold">
-              {formatAmount(eightyD.used)}{" "}
+              <MoneyFigure aggregate={eightyD.used} />{" "}
               <span className="text-muted-foreground text-base font-normal">
-                / {formatAmount(eightyD.limit)}
+                / <Money minor={eightyD.limitMinor} currency={STATUTORY_CURRENCY} />
               </span>
             </p>
           </CardContent>

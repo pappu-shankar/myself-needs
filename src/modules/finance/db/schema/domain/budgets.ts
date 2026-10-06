@@ -1,8 +1,7 @@
 import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { categories } from "./categories";
-import { currencyColumn } from "../currency";
+import { currencyColumn, minorAmount } from "../currency";
 
 /**
  * One row per (category, effective_from) — changing a budget going forward
@@ -18,7 +17,7 @@ export const budgets = sqliteTable(
     categoryId: integer("category_id")
       .notNull()
       .references(() => categories.id),
-    monthlyLimit: money("monthly_limit").notNull(),
+    monthlyLimitMinor: minorAmount("monthly_limit_minor").notNull(),
     /** The budget's own currency. Spend in other currencies converts into it
      * for comparison, rather than the limit converting into base. */
     currency: currencyColumn(),

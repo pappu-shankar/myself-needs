@@ -72,11 +72,16 @@ export function GoalForm() {
         <Input type="date" name="targetDate" id="targetDate" />
       </FormField>
 
+      {/* Entered in rupees, the major unit — the action converts it to the
+          stored integer minor amount. `step` matches the two-decimal limit the
+          validator enforces, so the browser rejects 1.005 rather than letting
+          the server round it away. */}
       {type === "financial" && (
-        <FormField label="Target amount" htmlFor="targetAmount" hint="Optional">
+        <FormField label="Target amount" htmlFor="targetAmount" hint="Optional, in ₹">
           <Input
             type="number"
-            step="any"
+            step="0.01"
+            min="0"
             name="targetAmount"
             id="targetAmount"
             className="tabular-nums"

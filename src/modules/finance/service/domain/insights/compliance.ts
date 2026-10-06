@@ -1,28 +1,36 @@
 import type { FinanceSnapshot } from "./snapshot";
 import type { Insight } from "./types";
 import { getCreditUtilization } from "../../utility/loans";
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { convert } from "../../utility/fx";
+import { formatMoney } from "@/lib/format";
 
 export function contributionLimitsRule(snapshot: FinanceSnapshot): Insight[] {
   const insights: Insight[] = [];
-  if (snapshot.eightyC.used >= snapshot.eightyC.limit) {
+  const currency = snapshot.taxCurrency;
+  // "Limit reached" is a claim about a total, so it is only made when the total
+  // is whole. A short figure here would quietly stop telling the user they have
+  // maxed out a deduction.
+  if (
+    snapshot.eightyC.used.complete &&
+    snapshot.eightyC.used.baseMinor >= snapshot.eightyC.limitMinor
+  ) {
     insights.push({
       id: `80c-limit-reached:FY ${snapshot.fy.label}`,
       category: "compliance",
       severity: "info",
-      message: `80C limit reached — ${formatAmount(snapshot.eightyC.used)} used against a ${formatAmount(snapshot.eightyC.limit)} limit.`,
+      message: `80C limit reached — ${formatMoney({ minor: snapshot.eightyC.used.baseMinor, currency })} used against a ${formatMoney({ minor: snapshot.eightyC.limitMinor, currency })} limit.`,
       link: "/finance/tax/deductions",
     });
   }
-  if (snapshot.eightyD.used >= snapshot.eightyD.limit) {
+  if (
+    snapshot.eightyD.used.complete &&
+    snapshot.eightyD.used.baseMinor >= snapshot.eightyD.limitMinor
+  ) {
     insights.push({
       id: `80d-limit-reached:FY ${snapshot.fy.label}`,
       category: "compliance",
       severity: "info",
-      message: `80D limit reached — ${formatAmount(snapshot.eightyD.used)} used against a ${formatAmount(snapshot.eightyD.limit)} limit.`,
+      message: `80D limit reached — ${formatMoney({ minor: snapshot.eightyD.used.baseMinor, currency })} used against a ${formatMoney({ minor: snapshot.eightyD.limitMinor, currency })} limit.`,
       link: "/finance/tax/deductions",
     });
   }
@@ -33,22 +41,25 @@ export function contributionLimitsRule(snapshot: FinanceSnapshot): Insight[] {
 export function ltcgApproachingRule(snapshot: FinanceSnapshot): Insight[] {
   // FY-scoped: only this FY's redemptions, against this FY's exemption.
   const {
-    ltcgEquity,
-    taxEquityLtcg,
-    equityLtcgExemption: exemption,
+    ltcgEquityMinor,
+    taxEquityLtcgMinor,
+    equityLtcgExemptionMinor: exemptionMinor,
     fiscalYear,
   } = snapshot.capitalGains;
-  if (taxEquityLtcg > 0 || exemption <= 0) return [];
+  if (taxEquityLtcgMinor > 0 || exemptionMinor <= 0) return [];
 
-  const usedPercent = (ltcgEquity / exemption) * 100;
+  // Gains and exemption are both statutory INR paise, so the ratio compares
+  // like with like and needs no conversion.
+  const usedPercent = (ltcgEquityMinor / exemptionMinor) * 100;
   if (usedPercent < snapshot.settings.ltcgApproachingPercent) return [];
 
+  const currency = snapshot.taxCurrency;
   return [
     {
       id: `ltcg-approaching:FY ${fiscalYear.label}:${Math.round(usedPercent)}`,
       category: "compliance",
       severity: "info",
-      message: `Equity LTCG for FY ${fiscalYear.label} is at ${formatAmount(ltcgEquity)} of your ${formatAmount(exemption)} exemption (${usedPercent.toFixed(0)}%) — more gains realized now would start owing tax.`,
+      message: `Equity LTCG for FY ${fiscalYear.label} is at ${formatMoney({ minor: ltcgEquityMinor, currency })} of your ${formatMoney({ minor: exemptionMinor, currency })} exemption (${usedPercent.toFixed(0)}%) — more gains realized now would start owing tax.`,
       link: `/finance/tax/capital-gains?fy=${fiscalYear.label}`,
     },
   ];
@@ -56,12 +67,37 @@ export function ltcgApproachingRule(snapshot: FinanceSnapshot): Insight[] {
 
 /** `balance ÷ credit_limit` above the configured threshold — commonly cited guidance is ~30%. */
 export function creditUtilizationRule(snapshot: FinanceSnapshot): Insight[] {
-  return snapshot.accounts
-    .filter((a) => a.type === "credit_card" && a.creditLimit)
-    .map((a) => {
-      const utilization = getCreditUtilization(Math.abs(a.balance), a.creditLimit ?? 0);
-      return { account: a, utilization };
-    })
+  const utilizations: { account: FinanceSnapshot["accounts"][number]; utilization: number }[] = [];
+  for (const account of snapshot.accounts) {
+    if (account.type !== "credit_card") continue;
+    const terms = snapshot.debtTerms.get(account.id);
+    if (!terms?.creditLimitMinor || !terms.limitCurrency) continue;
+
+    // The limit can be recorded in a different currency from the card's own
+    // balance, and a ratio of two different currencies is meaningless. Convert
+    // the limit into the balance's currency — and when no rate resolves, drop
+    // the card rather than report a percentage computed from mismatched units.
+    let limitMinor = terms.creditLimitMinor;
+    if (terms.limitCurrency !== account.currency) {
+      const converted = convert(
+        snapshot.fxRates,
+        terms.creditLimitMinor,
+        terms.limitCurrency,
+        account.currency,
+        snapshot.today,
+      );
+      if (!converted) continue;
+      limitMinor = converted.minor;
+    }
+
+    // Both sides are now minor units of the same currency, so the scale cancels.
+    utilizations.push({
+      account,
+      utilization: getCreditUtilization(Math.abs(account.balanceMinor), limitMinor),
+    });
+  }
+
+  return utilizations
     .filter(({ utilization }) => utilization >= snapshot.settings.creditUtilizationThresholdPercent)
     .map(({ account, utilization }) => ({
       id: `credit-utilization:${account.id}:${Math.round(utilization)}`,

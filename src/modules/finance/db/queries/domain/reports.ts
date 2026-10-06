@@ -1,13 +1,16 @@
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
-import { paiseToRupees } from "../../schema/money";
 import { transactions } from "../../schema/domain/transactions";
 import { categories } from "../../schema/domain/categories";
+import type { Currency } from "../../schema/currency";
+import { live } from "../lifecycle";
 
 export interface MonthlyIncomeExpense {
   month: string;
-  income: number;
-  expense: number;
+  /** Minor units. Mixed-currency vaults get one row per currency. */
+  incomeMinor: number;
+  expenseMinor: number;
+  currency: Currency;
 }
 
 /** One row per YYYY-MM in [startDate, endDate) that has at least one transaction — months with none are simply absent. */
@@ -18,26 +21,35 @@ export function getMonthlyIncomeExpense(
   return getDb()
     .select({
       month: sql<string>`substr(${transactions.date}, 1, 7)`,
-      income:
-        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'income' THEN ${transactions.amount} ELSE 0 END), 0)`.mapWith(
-          paiseToRupees,
+      currency: transactions.currency,
+      incomeMinor:
+        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'income' THEN ${transactions.amountMinor} ELSE 0 END), 0)`.mapWith(
+          Number,
         ),
-      expense:
-        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'expense' THEN ${transactions.amount} ELSE 0 END), 0)`.mapWith(
-          paiseToRupees,
+      expenseMinor:
+        sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'expense' THEN ${transactions.amountMinor} ELSE 0 END), 0)`.mapWith(
+          Number,
         ),
     })
     .from(transactions)
-    .where(and(gte(transactions.date, startDate), lt(transactions.date, endDate)))
-    .groupBy(sql`substr(${transactions.date}, 1, 7)`)
-    .orderBy(sql`substr(${transactions.date}, 1, 7)`)
+    .where(
+      and(
+        gte(transactions.date, startDate),
+        lt(transactions.date, endDate),
+        live(transactions.voidedAt),
+      ),
+    )
+    .groupBy(sql`substr(${transactions.date}, 1, 7)`, transactions.currency)
+    .orderBy(sql`substr(${transactions.date}, 1, 7)`, transactions.currency)
     .all();
 }
 
 export interface CategoryBreakdownRow {
   categoryId: number;
   categoryName: string;
-  total: number;
+  /** Minor units of `currency`. */
+  totalMinor: number;
+  currency: Currency;
 }
 
 export function getExpenseByCategory(startDate: string, endDate: string): CategoryBreakdownRow[] {
@@ -45,7 +57,8 @@ export function getExpenseByCategory(startDate: string, endDate: string): Catego
     .select({
       categoryId: categories.id,
       categoryName: categories.name,
-      total: sql<number>`SUM(${transactions.amount})`.mapWith(paiseToRupees),
+      currency: transactions.currency,
+      totalMinor: sql<number>`SUM(${transactions.amountMinor})`.mapWith(Number),
     })
     .from(transactions)
     .innerJoin(categories, eq(transactions.categoryId, categories.id))
@@ -54,9 +67,10 @@ export function getExpenseByCategory(startDate: string, endDate: string): Catego
         eq(transactions.type, "expense"),
         gte(transactions.date, startDate),
         lt(transactions.date, endDate),
+        live(transactions.voidedAt),
       ),
     )
-    .groupBy(categories.id)
-    .orderBy(sql`SUM(${transactions.amount}) DESC`)
+    .groupBy(categories.id, transactions.currency)
+    .orderBy(sql`SUM(${transactions.amountMinor}) DESC`)
     .all();
 }

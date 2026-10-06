@@ -6,9 +6,7 @@ import type { TransactionRow } from "@/modules/finance";
 import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { formatMoney } from "@/lib/format";
 
 const columns: DataTableColumnDef<TransactionRow>[] = [
   {
@@ -38,7 +36,7 @@ const columns: DataTableColumnDef<TransactionRow>[] = [
     cell: ({ row }) => row.original.categoryName ?? "—",
   },
   {
-    accessorKey: "amount",
+    accessorKey: "amountMinor",
     header: "Amount",
     meta: { align: "right", width: "140px" },
     cell: ({ row }) => {
@@ -46,7 +44,7 @@ const columns: DataTableColumnDef<TransactionRow>[] = [
       return (
         <span className={t.type === "expense" ? "text-destructive" : ""}>
           {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}
-          {formatAmount(t.amount)}
+          {formatMoney({ minor: t.amountMinor, currency: t.currency })}
         </span>
       );
     },

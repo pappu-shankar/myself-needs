@@ -5,6 +5,7 @@ import { investmentCashFlows } from "../../schema/domain/investment-cash-flows";
 import { investmentValuations } from "../../schema/domain/investment-valuations";
 import { accounts } from "../../schema/domain/accounts";
 import { schemeTemplates } from "../../schema/domain/scheme-templates";
+import { live, unarchived, type LifecycleScope } from "../lifecycle";
 
 export type NewHolding = typeof investmentHoldings.$inferInsert;
 export type NewCashFlow = typeof investmentCashFlows.$inferInsert;
@@ -20,8 +21,13 @@ const HOLDING_COLUMNS = {
   name: investmentHoldings.name,
   accountId: investmentHoldings.accountId,
   accountName: accounts.name,
-  units: investmentHoldings.units,
-  interestRate: investmentHoldings.interestRate,
+  /** Scaled by UNITS_SCALE (1e6) — never a decimal unit count. Value it
+   * with `valueOfUnits`, never by multiplying it yourself. */
+  unitsScaled: investmentHoldings.unitsScaled,
+  /** Integer basis points, not a percentage. */
+  rateBps: investmentHoldings.rateBps,
+  currency: investmentHoldings.currency,
+  liquidity: investmentHoldings.liquidity,
   maturityDate: investmentHoldings.maturityDate,
   schemeTemplateId: investmentHoldings.schemeTemplateId,
   schemeTemplateName: schemeTemplates.name,
@@ -31,12 +37,13 @@ const HOLDING_COLUMNS = {
   notes: investmentHoldings.notes,
 } as const;
 
-export function listHoldings() {
-  return getDb()
+export function listHoldings(scope: LifecycleScope = {}) {
+  const query = getDb()
     .select(HOLDING_COLUMNS)
     .from(investmentHoldings)
     .leftJoin(accounts, eq(investmentHoldings.accountId, accounts.id))
-    .leftJoin(schemeTemplates, eq(investmentHoldings.schemeTemplateId, schemeTemplates.id))
+    .leftJoin(schemeTemplates, eq(investmentHoldings.schemeTemplateId, schemeTemplates.id));
+  return (scope.includeArchived ? query : query.where(unarchived(investmentHoldings.archivedAt)))
     .orderBy(investmentHoldings.name)
     .all();
 }
@@ -48,7 +55,9 @@ export function listHoldingsByGoalId(goalId: number) {
     .from(investmentHoldings)
     .leftJoin(accounts, eq(investmentHoldings.accountId, accounts.id))
     .leftJoin(schemeTemplates, eq(investmentHoldings.schemeTemplateId, schemeTemplates.id))
-    .where(eq(investmentHoldings.linkedGoalId, goalId))
+    .where(
+      and(eq(investmentHoldings.linkedGoalId, goalId), unarchived(investmentHoldings.archivedAt)),
+    )
     .orderBy(investmentHoldings.name)
     .all();
 }
@@ -61,22 +70,36 @@ export function insertCashFlow(entry: NewCashFlow) {
   return getDb().insert(investmentCashFlows).values(entry).returning().get();
 }
 
-/** `asOfDate` (YYYY-MM-DD), when given, only includes flows on/before that date — used for net-worth history. Omit for the full history. */
-export function listCashFlowsForHolding(holdingId: number, asOfDate?: string) {
+/**
+ * `asOfDate` (YYYY-MM-DD), when given, only includes flows on/before that
+ * date — used for net-worth history. Omit for the full history.
+ *
+ * Voided flows are excluded, which is what keeps a reported XIRR from moving
+ * when a mistyped contribution is corrected: the void plus its replacement
+ * net out, rather than both counting.
+ */
+export function listCashFlowsForHolding(
+  holdingId: number,
+  asOfDate?: string,
+  scope: LifecycleScope = {},
+) {
   return getDb()
     .select()
     .from(investmentCashFlows)
     .where(
-      asOfDate
-        ? and(eq(investmentCashFlows.holdingId, holdingId), lte(investmentCashFlows.date, asOfDate))
-        : eq(investmentCashFlows.holdingId, holdingId),
+      and(
+        eq(investmentCashFlows.holdingId, holdingId),
+        asOfDate ? lte(investmentCashFlows.date, asOfDate) : undefined,
+        scope.includeVoided ? undefined : live(investmentCashFlows.voidedAt),
+      ),
     )
     .orderBy(desc(investmentCashFlows.date), desc(investmentCashFlows.id))
     .all();
 }
 
-export function listAllCashFlows() {
-  return getDb().select().from(investmentCashFlows).all();
+export function listAllCashFlows(scope: LifecycleScope = {}) {
+  const query = getDb().select().from(investmentCashFlows);
+  return (scope.includeVoided ? query : query.where(live(investmentCashFlows.voidedAt))).all();
 }
 
 /**
@@ -90,7 +113,7 @@ export function upsertValuation(entry: NewValuation) {
     .values(entry)
     .onConflictDoUpdate({
       target: [investmentValuations.holdingId, investmentValuations.date],
-      set: { pricePerUnit: entry.pricePerUnit },
+      set: { priceScaled: entry.priceScaled },
     })
     .returning()
     .get();

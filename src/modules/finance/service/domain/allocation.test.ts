@@ -4,6 +4,7 @@ import { getAllocationReport, getCurrentAllocation } from "./allocation";
 import { setAllocationTarget, setDateOfBirth } from "../config/allocation";
 import { createAccount } from "./accounts";
 import { createHolding, createValuation } from "./investments";
+import { toPriceScaled, toUnitsScaled } from "../utility/units";
 
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
@@ -11,27 +12,38 @@ afterEach(teardownTestDb);
 describe("allocation service", () => {
   describe("getCurrentAllocation", () => {
     it("groups accounts and holdings by asset class as a percentage of net worth", () => {
-      createAccount({ name: "Checking", type: "checking", openingBalance: 5000 });
-      const holding = createHolding({ type: "equity", name: "Stock A", units: 30 });
-      createValuation({ holdingId: holding.id, date: "2026-01-01", pricePerUnit: 100 });
+      createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 500000 });
+      const holding = createHolding({
+        type: "equity",
+        name: "Stock A",
+        unitsScaled: toUnitsScaled(30),
+      });
+      createValuation({
+        holdingId: holding.id,
+        date: "2026-01-01",
+        priceScaled: toPriceScaled(100),
+      });
 
-      const rows = getCurrentAllocation();
+      const { rows, netWorth } = getCurrentAllocation();
 
       // Net worth = 5000 (cash) + 3000 (holding) = 8000.
-      expect(rows).toEqual([
-        { assetClass: "cash", value: 5000, percentOfNetWorth: 62.5 },
-        { assetClass: "equity", value: 3000, percentOfNetWorth: 37.5 },
+      expect(netWorth.baseMinor).toBe(800000);
+      expect(rows.map((r) => [r.assetClass, r.value.baseMinor, r.percentOfNetWorth])).toEqual([
+        ["cash", 500000, 62.5],
+        ["equity", 300000, 37.5],
       ]);
     });
 
     it("returns null percentages (not negative ones) when net worth is zero or negative, while keeping raw values", () => {
       // Liability outweighs the liquid asset, so net worth is negative.
-      createAccount({ name: "Checking", type: "checking", openingBalance: 2000 });
-      createAccount({ name: "Home Loan", type: "loan", openingBalance: 10000 });
+      createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 200000 });
+      createAccount({ name: "Home Loan", type: "loan", openingBalanceMinor: 1000000 });
 
-      const rows = getCurrentAllocation();
+      const { rows } = getCurrentAllocation();
 
-      expect(rows).toEqual([{ assetClass: "cash", value: 2000, percentOfNetWorth: null }]);
+      expect(rows.map((r) => [r.assetClass, r.value.baseMinor, r.percentOfNetWorth])).toEqual([
+        ["cash", 200000, null],
+      ]);
     });
   });
 
@@ -42,7 +54,7 @@ describe("allocation service", () => {
 
       // Born 1990-06-20: birthday hasn't occurred yet this year (Jun 15 < Jun 20), so age is 35, not 36.
       setDateOfBirth("1990-06-20");
-      createAccount({ name: "Checking", type: "checking", openingBalance: 10000 });
+      createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 1000000 });
 
       const report = getAllocationReport();
 
@@ -50,11 +62,12 @@ describe("allocation service", () => {
       const expectedEquityTarget = 85 * 0.65;
       const expectedDebtTarget = 85 - expectedEquityTarget;
 
-      expect(report).toEqual([
+      expect(report.rows).toEqual([
         {
           assetClass: "equity",
           targetPercentage: expectedEquityTarget,
           isCustom: false,
+          currentMinor: 0,
           currentPercentage: 0,
           variance: -expectedEquityTarget,
         },
@@ -62,6 +75,7 @@ describe("allocation service", () => {
           assetClass: "debt",
           targetPercentage: expectedDebtTarget,
           isCustom: false,
+          currentMinor: 0,
           currentPercentage: 0,
           variance: -expectedDebtTarget,
         },
@@ -69,6 +83,7 @@ describe("allocation service", () => {
           assetClass: "gold",
           targetPercentage: 5,
           isCustom: false,
+          currentMinor: 0,
           currentPercentage: 0,
           variance: -5,
         },
@@ -76,6 +91,7 @@ describe("allocation service", () => {
           assetClass: "cash",
           targetPercentage: 10,
           isCustom: false,
+          currentMinor: 1000000,
           currentPercentage: 100,
           variance: 90,
         },
@@ -86,8 +102,8 @@ describe("allocation service", () => {
 
     it("falls back to the generic moderate split when no date of birth is on file", () => {
       const report = getAllocationReport();
-      expect(report.find((r) => r.assetClass === "equity")?.targetPercentage).toBe(55);
-      expect(report.find((r) => r.assetClass === "debt")?.targetPercentage).toBe(30);
+      expect(report.rows.find((r) => r.assetClass === "equity")?.targetPercentage).toBe(55);
+      expect(report.rows.find((r) => r.assetClass === "debt")?.targetPercentage).toBe(30);
     });
 
     it("a custom stored target overrides the suggested one and is flagged isCustom", () => {
@@ -95,7 +111,7 @@ describe("allocation service", () => {
 
       const report = getAllocationReport();
 
-      expect(report.find((r) => r.assetClass === "equity")).toMatchObject({
+      expect(report.rows.find((r) => r.assetClass === "equity")).toMatchObject({
         targetPercentage: 70,
         isCustom: true,
       });

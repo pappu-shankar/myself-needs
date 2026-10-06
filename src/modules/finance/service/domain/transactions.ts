@@ -20,14 +20,28 @@ function assertIsoDate(value: unknown): asserts value is string {
   }
 }
 
-function validateTransaction(entry: NewTransaction): void {
-  if (!Number.isFinite(entry.amount) || entry.amount <= 0) {
+/**
+ * Validates the entry and returns it with both currencies pinned to the
+ * accounts they belong to.
+ *
+ * Currency is a property of the account (decision 6), so it is derived here
+ * rather than trusted from the caller — a transaction whose `currency` differed
+ * from its account's would make that account's balance a sum of two
+ * denominations. A caller may still state it, and a disagreement is an error
+ * rather than a silent overwrite.
+ */
+function normalizeTransaction(entry: NewTransaction): NewTransaction {
+  if (!Number.isInteger(entry.amountMinor) || entry.amountMinor <= 0) {
     throw new DomainError("Transaction amount must be greater than zero.");
   }
   assertIsoDate(entry.date);
 
-  if (!getAccountByIdRow(entry.accountId)) {
+  const account = getAccountByIdRow(entry.accountId);
+  if (!account) {
     throw new DomainError("The source account no longer exists.");
+  }
+  if (entry.currency != null && entry.currency !== account.currency) {
+    throw new DomainError("A transaction must be in its account's currency.");
   }
 
   if (entry.type === "transfer") {
@@ -37,22 +51,61 @@ function validateTransaction(entry: NewTransaction): void {
     if (entry.categoryId != null) {
       throw new DomainError("Transfers cannot have a category.");
     }
-    if (!getAccountByIdRow(entry.toAccountId)) {
+    const toAccount = getAccountByIdRow(entry.toAccountId);
+    if (!toAccount) {
       throw new DomainError("The destination account no longer exists.");
     }
-    return;
+    if (entry.toCurrency != null && entry.toCurrency !== toAccount.currency) {
+      throw new DomainError("A transfer must land in the destination account's currency.");
+    }
+
+    // A cross-currency transfer carries both legs, so the rate that actually
+    // applied is implied by the two amounts and never needs a lookup — the
+    // truth is what the bank did, not what a daily reference rate says. That
+    // makes the incoming amount required, not optional: deriving it from a
+    // rate would record a figure the bank never moved. Conversely a
+    // same-currency transfer must not carry a second leg, or the two sides
+    // could disagree about one movement.
+    const crossCurrency = account.currency !== toAccount.currency;
+    if (crossCurrency) {
+      if (entry.toAmountMinor == null) {
+        throw new DomainError(
+          "A transfer between accounts in different currencies needs the amount received.",
+        );
+      }
+      if (!Number.isInteger(entry.toAmountMinor) || entry.toAmountMinor <= 0) {
+        throw new DomainError("The amount received must be greater than zero.");
+      }
+    } else if (entry.toAmountMinor != null) {
+      throw new DomainError(
+        "A transfer between accounts in the same currency moves a single amount.",
+      );
+    }
+
+    return {
+      ...entry,
+      currency: account.currency,
+      toCurrency: crossCurrency ? toAccount.currency : null,
+      toAmountMinor: crossCurrency ? entry.toAmountMinor : null,
+    };
   }
 
   if (entry.toAccountId != null) {
     throw new DomainError("Only transfers can have a destination account.");
   }
-  if (entry.categoryId == null) return;
+  if (entry.toAmountMinor != null || entry.toCurrency != null) {
+    throw new DomainError("Only transfers can have a destination amount.");
+  }
+
+  const normalized: NewTransaction = { ...entry, currency: account.currency };
+  if (entry.categoryId == null) return normalized;
 
   const category = getCategoryByIdRow(entry.categoryId);
   if (!category) throw new DomainError("The selected category no longer exists.");
   if (category.type !== entry.type) {
     throw new DomainError("The category does not match the transaction type.");
   }
+  return normalized;
 }
 
 export function getTransactionsPage(params: TransactionsCursorPageParams = {}, pageSize?: number) {
@@ -73,6 +126,5 @@ export function getRecentTransactions(limit = 5) {
 }
 
 export function createTransaction(entry: NewTransaction) {
-  validateTransaction(entry);
-  return insertTransaction(entry);
+  return insertTransaction(normalizeTransaction(entry));
 }

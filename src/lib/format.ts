@@ -119,3 +119,26 @@ export function formatMoneyAmount(money: Money, options: { locale?: string } = {
     maximumFractionDigits: exponent,
   }).format(major === 0 ? 0 : major);
 }
+
+/**
+ * A major-unit decimal the user typed → the integer minor-unit amount stored.
+ *
+ * This is the only place a money value crosses from a float to an integer, and
+ * it exists so no call site writes `Math.round(x * 100)` and quietly assumes a
+ * 2-decimal currency. The exponent comes from `Intl`, the same source
+ * `formatMoney` reads, so the round-trip cannot disagree with the display.
+ */
+export function toMinor(major: number, currency: string): number {
+  const exponent = exponentOf(currency, localeFor(currency));
+  return Math.round(major * 10 ** exponent);
+}
+
+/**
+ * The inverse, for pre-filling an edit form with what the user originally
+ * typed. Never use it to do arithmetic — that is what put floats on money in
+ * the first place. Arithmetic happens in minor units.
+ */
+export function toMajor(minor: number, currency: string): number {
+  const exponent = exponentOf(currency, localeFor(currency));
+  return minor / 10 ** exponent;
+}

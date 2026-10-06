@@ -14,12 +14,13 @@ const LABELS: Record<AccountType, string> = {
   savings: "Savings",
   cash: "Cash",
   credit_card: "Credit card",
+  revolving_credit: "Revolving credit",
   loan: "Loan",
   investment: "Investment",
   receivable: "Receivable (money owed to you)",
 };
 
-const LIABILITY_TYPES = new Set<AccountType>(["credit_card", "loan"]);
+const LIABILITY_TYPES = new Set<AccountType>(["credit_card", "revolving_credit", "loan"]);
 
 export function AccountForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [state, formAction, isPending] = useActionState(addAccountAction, initialState);
@@ -74,7 +75,7 @@ export function AccountForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         </FormField>
       )}
 
-      {type === "credit_card" && (
+      {(type === "credit_card" || type === "revolving_credit") && (
         <FormField label="Credit limit" htmlFor="creditLimit">
           <Input type="number" step="any" name="creditLimit" className="tabular-nums" />
         </FormField>

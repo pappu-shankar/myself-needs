@@ -4,11 +4,21 @@ import { useMemo, useState } from "react";
 import type { getHoldingsWithValue } from "@/modules/finance";
 import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
 import { FormField } from "@/components/ui/form-field";
+import { formatMoney, formatMoneyAmount } from "@/lib/format";
 
 type Holding = ReturnType<typeof getHoldingsWithValue>[number];
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Holdings can be priced in different currencies, so the filtered total is
+ * kept per currency rather than summed into one number — adding a dollar
+ * position to a rupee one is the bug the currency column exists to prevent. */
+function totalsByCurrency(holdings: Holding[]): { currency: string; minor: number }[] {
+  const totals = new Map<string, number>();
+  for (const h of holdings) {
+    totals.set(h.currency, (totals.get(h.currency) ?? 0) + h.currentValueMinor);
+  }
+  return [...totals.entries()]
+    .map(([currency, minor]) => ({ currency, minor }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
 function formatPercent(rate: number | null) {
@@ -65,10 +75,7 @@ export function HoldingsTable({
     [holdings, accountFilter, typeFilter],
   );
 
-  const filteredTotal = useMemo(
-    () => filtered.reduce((sum, h) => sum + h.currentValue, 0),
-    [filtered],
-  );
+  const filteredTotals = useMemo(() => totalsByCurrency(filtered), [filtered]);
 
   const columns: DataTableColumnDef<Holding>[] = useMemo(
     () => [
@@ -111,7 +118,7 @@ export function HoldingsTable({
             return <span className="text-muted-foreground">No price yet</span>;
           return (
             <>
-              {formatAmount(h.currentValue)}
+              {formatMoneyAmount({ minor: h.currentValueMinor, currency: h.currency })}
               <span className="text-muted-foreground ml-1 text-xs">
                 ({h.closed ? "closed" : BASIS_LABEL[h.basis]})
               </span>
@@ -171,7 +178,12 @@ export function HoldingsTable({
         <div className="flex items-end pb-1.5 text-sm">
           <span className="text-muted-foreground">
             {filtered.length} of {holdings.length} holdings ·{" "}
-            <span className="tabular-nums">{formatAmount(filteredTotal)}</span>
+            {filteredTotals.map(({ currency, minor }, i) => (
+              <span key={currency} className="tabular-nums">
+                {i > 0 && " · "}
+                {formatMoney({ minor, currency })}
+              </span>
+            ))}
           </span>
         </div>
       </div>

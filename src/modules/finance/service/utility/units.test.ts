@@ -6,7 +6,11 @@ import {
   fromUnitsScaled,
   UNITS_SCALE,
   PRICE_SCALE,
+  toRateBps,
+  fromRateBps,
+  applyRateBps,
 } from "./units";
+import { CURRENCIES, CURRENCY_EXPONENT } from "../../db/schema/currency";
 
 describe("valueOfUnits", () => {
   it("values a plain holding exactly", () => {
@@ -52,5 +56,38 @@ describe("valueOfUnits", () => {
 
   it("round-trips a unit count", () => {
     expect(fromUnitsScaled(toUnitsScaled(1234.5678))).toBe(1234.5678);
+  });
+});
+
+describe("rate basis points", () => {
+  it("round-trips a typed percentage", () => {
+    expect(toRateBps(7.5)).toBe(750);
+    expect(toRateBps(8.65)).toBe(865);
+    expect(fromRateBps(865)).toBe(8.65);
+  });
+
+  it("applies a rate to money in exact integers", () => {
+    // ₹1,00,000.00 at 8.65% = ₹8,650.00
+    expect(applyRateBps(10_000_000, 865)).toBe(865_000);
+  });
+
+  it("rounds half away from zero, so a credit and its debit match", () => {
+    expect(applyRateBps(1, 5000)).toBe(1);
+    expect(applyRateBps(-1, 5000)).toBe(-1);
+  });
+
+  it("survives a position whose intermediate product exceeds 2^53", () => {
+    // ₹1,000 Cr in paise × 2000bps: the product is ~2e16, past MAX_SAFE_INTEGER.
+    expect(applyRateBps(1_000_00_00_00_000, 2000)).toBe(200_00_00_00_000);
+  });
+});
+
+describe("CURRENCY_EXPONENT", () => {
+  it("agrees with Intl for every launch currency", () => {
+    for (const currency of CURRENCIES) {
+      const fromIntl = new Intl.NumberFormat("en-US", { style: "currency", currency })
+        .resolvedOptions().maximumFractionDigits;
+      expect(CURRENCY_EXPONENT[currency], currency).toBe(fromIntl);
+    }
   });
 });

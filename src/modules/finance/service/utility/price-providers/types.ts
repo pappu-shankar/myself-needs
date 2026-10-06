@@ -1,7 +1,19 @@
+import type { Currency } from "../../../db/schema/currency";
+
 export interface PriceQuote {
   /** YYYY-MM-DD */
   date: string;
-  pricePerUnit: number;
+  /** Scaled by `PRICE_SCALE` (1e6), like every stored price. A provider
+   * converts its own representation once, at its boundary, so no caller
+   * handles a float price. */
+  priceScaled: number;
+  /**
+   * The currency the feed publishes in — stated, never assumed. A quote
+   * recorded against a holding denominated in something else would value the
+   * position at the wrong scale, and the only safe response is to refuse,
+   * because inventing a conversion rate here would hide the mismatch.
+   */
+  currency: Currency;
 }
 
 /**

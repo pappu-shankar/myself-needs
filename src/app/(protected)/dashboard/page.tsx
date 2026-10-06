@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import { getTotalBalance } from "@/modules/finance";
+import { getNetWorth } from "@/modules/finance";
 import { getGymDashboardSummary, getLatestMetricSummary } from "@/modules/health";
 import { getActiveMedicationsCount } from "@/modules/mental";
 import { getActiveGoalsCount } from "@/modules/plans";
 import Link from "next/link";
+import { MoneyFigure } from "../finance/_components/money";
 import { todayIso } from "@/lib/dates";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 
 export default async function DashboardPage() {
   await requireUser();
-  const totalBalance = getTotalBalance();
+  const totalBalance = getNetWorth();
   const latestMetric = getLatestMetricSummary();
   const today = todayIso();
   const activeMedicationsCount = getActiveMedicationsCount(today);
@@ -37,10 +38,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="tabular-nums text-2xl font-semibold">
-              {totalBalance.toLocaleString("en-IN", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              <MoneyFigure aggregate={totalBalance} />
             </p>
           </CardContent>
         </Card>

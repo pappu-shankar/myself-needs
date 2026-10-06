@@ -29,7 +29,7 @@ export function listRecurringRules() {
       toAccountName: toAccount.name,
       categoryId: recurringRules.categoryId,
       categoryName: categories.name,
-      amount: recurringRules.amount,
+      amount: recurringRules.amountMinor,
       frequency: recurringRules.frequency,
       startDate: recurringRules.startDate,
       endDate: recurringRules.endDate,

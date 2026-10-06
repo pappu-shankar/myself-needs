@@ -19,7 +19,7 @@ describe("dashboard page accessibility", () => {
   });
 
   it("has no violations once every module has data", async () => {
-    createAccount({ name: "Checking", type: "checking", openingBalance: 1000 });
+    createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 100_000 });
     createMetric({ type: "weight", label: "Weight", value: 70, unit: "kg", date: "2026-08-24" });
     createMedication({ name: "Sertraline", startDate: "2026-08-01" });
     createGoal({

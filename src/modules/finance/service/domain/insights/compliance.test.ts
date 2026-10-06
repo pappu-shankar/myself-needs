@@ -38,7 +38,7 @@ describe("contributionLimitsRule", () => {
     createCashFlow({
       holdingId: elss.id,
       date: currentFyStart(),
-      amount: -160000,
+      amountMinor: -16000000,
       flowType: "contribution",
     });
 
@@ -46,7 +46,7 @@ describe("contributionLimitsRule", () => {
     const rule = createRecurringRule({
       type: "expense",
       accountId: account.id,
-      amount: 30000,
+      amountMinor: 3000000,
       frequency: "yearly",
       startDate: currentFyStart(),
     });
@@ -54,7 +54,7 @@ describe("contributionLimitsRule", () => {
       type: "health",
       provider: "Acme",
       name: "Floater",
-      premiumAmount: 30000,
+      premiumAmountMinor: 3000000,
       premiumFrequency: "yearly",
       startDate: currentFyStart(),
       is80dEligible: true,
@@ -63,7 +63,7 @@ describe("contributionLimitsRule", () => {
     createTransaction({
       type: "expense",
       accountId: account.id,
-      amount: 30000,
+      amountMinor: 3000000,
       date: currentFyStart(),
       recurringRuleId: rule.id,
     });
@@ -90,13 +90,13 @@ describe("ltcgApproachingRule", () => {
     createCashFlow({
       holdingId: holding.id,
       date: monthsAgo(13),
-      amount: -100000,
+      amountMinor: -10000000,
       flowType: "contribution",
     });
     createCashFlow({
       holdingId: holding.id,
       date: todayStr(),
-      amount: 220000,
+      amountMinor: 22000000,
       flowType: "redemption",
     });
 
@@ -116,8 +116,8 @@ describe("creditUtilizationRule", () => {
     const card = createAccount({
       name: "Credit Card",
       type: "credit_card",
-      openingBalance: 6000,
-      creditLimit: 10000,
+      openingBalanceMinor: 600000,
+      creditTerms: { creditLimitMinor: 1000000 },
     });
 
     const insights = creditUtilizationRule(getFinanceSnapshot());
@@ -129,8 +129,8 @@ describe("creditUtilizationRule", () => {
     createAccount({
       name: "Credit Card",
       type: "credit_card",
-      openingBalance: 1000,
-      creditLimit: 10000,
+      openingBalanceMinor: 100000,
+      creditTerms: { creditLimitMinor: 1000000 },
     });
     expect(creditUtilizationRule(getFinanceSnapshot())).toHaveLength(0);
   });
@@ -142,7 +142,7 @@ describe("insuranceLapseRule", () => {
       type: "health",
       provider: "Acme",
       name: "Floater",
-      premiumAmount: 5000,
+      premiumAmountMinor: 500000,
       premiumFrequency: "yearly",
       startDate: monthsAgo(12),
       renewalDate: daysAgo(10),
@@ -163,7 +163,7 @@ describe("insuranceLapseRule", () => {
       type: "health",
       provider: "Acme",
       name: "Floater",
-      premiumAmount: 5000,
+      premiumAmountMinor: 500000,
       premiumFrequency: "yearly",
       startDate: monthsAgo(12),
       renewalDate: daysAgo(-30),

@@ -5,6 +5,7 @@ import { createAccount } from "./accounts";
 import { createCategory } from "./categories";
 import { createTransaction } from "./transactions";
 import { createHolding, createValuation } from "./investments";
+import { toPriceScaled, toUnitsScaled } from "../utility/units";
 
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
@@ -14,26 +15,34 @@ describe("net-worth service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-02-10T00:00:00Z"));
 
-    const checking = createAccount({ name: "Checking", type: "checking", openingBalance: 1000 });
+    const checking = createAccount({
+      name: "Checking",
+      type: "checking",
+      openingBalanceMinor: 100000,
+    });
     const salary = createCategory({ name: "Salary", type: "income" });
     createTransaction({
       type: "income",
       accountId: checking.id,
       categoryId: salary.id,
-      amount: 500,
+      amountMinor: 50000,
       date: "2026-01-15",
     });
     createTransaction({
       type: "income",
       accountId: checking.id,
       categoryId: salary.id,
-      amount: 200,
+      amountMinor: 20000,
       date: "2026-02-05",
     });
 
-    const holding = createHolding({ type: "equity", name: "Stock A", units: 10 });
-    createValuation({ holdingId: holding.id, date: "2026-01-20", pricePerUnit: 100 });
-    createValuation({ holdingId: holding.id, date: "2026-02-05", pricePerUnit: 120 });
+    const holding = createHolding({
+      type: "equity",
+      name: "Stock A",
+      unitsScaled: toUnitsScaled(10),
+    });
+    createValuation({ holdingId: holding.id, date: "2026-01-20", priceScaled: toPriceScaled(100) });
+    createValuation({ holdingId: holding.id, date: "2026-02-05", priceScaled: toPriceScaled(120) });
 
     const trend = getNetWorthTrend(2);
 
@@ -41,9 +50,9 @@ describe("net-worth service", () => {
     // holding = 10 * 100 (latest valuation on/before 2026-01-31) = 1000. Total 2500.
     // Feb point (the current month) is as-of "today" (2026-02-10): checking = 1000+500+200=1700,
     // holding = 10 * 120 (latest valuation on/before 2026-02-10) = 1200. Total 2900.
-    expect(trend).toEqual([
-      { month: "2026-01", netWorth: 2500 },
-      { month: "2026-02", netWorth: 2900 },
+    expect(trend.map((p) => [p.month, p.netWorth.baseMinor, p.netWorth.complete])).toEqual([
+      ["2026-01", 250000, true],
+      ["2026-02", 290000, true],
     ]);
 
     vi.useRealTimers();
@@ -53,10 +62,12 @@ describe("net-worth service", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-15T00:00:00Z"));
 
-    createAccount({ name: "Checking", type: "checking", openingBalance: 500 });
+    createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 50000 });
 
     expect(getNetWorthTrend()).toHaveLength(12);
-    expect(getNetWorthTrend().at(-1)).toEqual({ month: "2026-06", netWorth: 500 });
+    const last = getNetWorthTrend().at(-1);
+    expect(last?.month).toBe("2026-06");
+    expect(last?.netWorth.baseMinor).toBe(50000);
 
     vi.useRealTimers();
   });

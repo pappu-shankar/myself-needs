@@ -7,8 +7,15 @@
 export {
   getAccounts,
   getAccount,
-  getAccountBalanceById,
-  getTotalBalance,
+  getAccountTerms,
+  getDebtTermsByAccount,
+  getAccountBalanceMinorById,
+  getAccountCurrency,
+  /** Per-currency subtotals, and the base-currency aggregate that carries the
+   * rate it used. `getTotalBalance` is gone: it added a dollar balance to a
+   * rupee one, which is the bug the currency column exists to prevent. */
+  getNetWorthByCurrency,
+  getNetWorth,
   createAccount,
 } from "./service/domain/accounts";
 export { getCategories, getCategoriesByType, createCategory } from "./service/domain/categories";
@@ -59,7 +66,8 @@ export {
   getHolding,
   getCashFlowsForHolding,
   getValuationsForHolding,
-  getPortfolioXirr,
+  getPortfolioXirrByCurrency,
+  getHoldingCurrency,
   createHolding,
   createCashFlow,
   createValuation,
@@ -109,3 +117,13 @@ export {
   type UpdateInsightsSettingsState,
 } from "./actions/config/insights";
 export * from "./types";
+
+/** Money aggregate shape and the provenance vocabulary, for the UI layer. A
+ * converted total is only auditable if the view can read the basis it carries. */
+export type {
+  MoneyAggregate,
+  CurrencyContribution,
+  ConfidenceShare,
+} from "./service/utility/aggregate";
+export type { ConfidenceLevel, ProvenanceSource, ProvenanceMethod } from "./db/schema/provenance";
+export type { Currency } from "./db/schema/currency";

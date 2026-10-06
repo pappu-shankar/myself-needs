@@ -1,8 +1,33 @@
+/**
+ * Plain constants and unions for the finance module.
+ *
+ * This file imports nothing, deliberately. Client components need some of
+ * these, and anything reachable from a `"use client"` file must not transitively
+ * reach `db/client.ts` — that drags the native SQLite binding into the browser
+ * bundle and fails the build with a module-not-found on `better-sqlite3`
+ * (symptom: a generic ENOENT on build-manifest.json in dev). See AGENTS.md.
+ */
+
+/**
+ * The currency statutory Indian tax figures are denominated in.
+ *
+ * Decision 15: a Finance Act limit does not move when someone switches their
+ * display currency, so tax amounts convert to INR, never to the base currency.
+ * Declared here rather than in the tax service because the tax settings form
+ * and the slabs table are client components and need it to display stored
+ * paise as rupees.
+ */
+export const STATUTORY_TAX_CURRENCY = "INR";
+
 export const ACCOUNT_TYPES = [
   "checking",
   "savings",
   "cash",
   "credit_card",
+  /** Draws against a limit with no fixed EMI — line of credit, overdraft, BNPL,
+   * margin loan. Fits neither `loan` (no amortization schedule) nor
+   * `credit_card`, and takes credit terms rather than loan terms. */
+  "revolving_credit",
   "loan",
   "investment",
   "receivable",

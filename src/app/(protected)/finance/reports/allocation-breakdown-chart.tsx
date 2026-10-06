@@ -1,9 +1,11 @@
 "use client";
 
 import { ChartCard } from "@/components/ui/chart-card";
+import { MoneyFigure } from "../_components/money";
 import type { getCurrentAllocation } from "@/modules/finance";
 
-type AllocationRow = ReturnType<typeof getCurrentAllocation>[number];
+type AllocationView = ReturnType<typeof getCurrentAllocation>;
+type AllocationRow = AllocationView["rows"][number];
 
 const CHART_SLOTS = [
   "var(--chart-1)",
@@ -32,13 +34,9 @@ const CLASS_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 interface Segment {
   assetClass: string;
-  value: number;
+  value: AllocationRow["value"];
   percentOfNetWorth: number | null;
 }
 
@@ -46,7 +44,15 @@ function foldIntoSlots(allocation: AllocationRow[]): Segment[] {
   const shown = allocation.slice(0, MAX_SLOTS - 1);
   const rest = allocation.slice(MAX_SLOTS - 1);
   if (rest.length === 0) return shown;
-  const otherValue = rest.reduce((sum, r) => sum + r.value, 0);
+  // Folding re-uses the per-class aggregates' base amounts; completeness is
+  // carried over so an unresolved currency is not hidden inside "Other".
+  const otherValue = {
+    ...rest[0].value,
+    baseMinor: rest.reduce((sum, r) => sum + r.value.baseMinor, 0),
+    complete: rest.every((r) => r.value.complete),
+    stale: rest.some((r) => r.value.stale),
+    byCurrency: rest.flatMap((r) => r.value.byCurrency),
+  };
   const otherPercent = rest.some((r) => r.percentOfNetWorth === null)
     ? null
     : rest.reduce((sum, r) => sum + (r.percentOfNetWorth ?? 0), 0);
@@ -61,22 +67,28 @@ function foldIntoSlots(allocation: AllocationRow[]): Segment[] {
  * "Other" so the fixed adjacent-pair CVD-safe hue order never gets a 9th
  * generated hue.
  */
-export function AllocationBreakdownChart({ allocation }: { allocation: AllocationRow[] }) {
-  const segments = foldIntoSlots(allocation);
-  const netWorthPositive = allocation.length === 0 || allocation[0].percentOfNetWorth !== null;
+export function AllocationBreakdownChart({ allocation }: { allocation: AllocationView }) {
+  const rows = allocation.rows;
+  const segments = foldIntoSlots(rows);
+  const netWorthPositive = rows.length === 0 || rows[0].percentOfNetWorth !== null;
 
   return (
     <ChartCard
       title="Current allocation"
       description="Every account and holding, as a share of net worth."
-      tableData={allocation}
+      tableData={rows}
       tableColumns={[
         {
           key: "assetClass",
           label: "Asset class",
           render: (r) => CLASS_LABELS[r.assetClass] ?? r.assetClass,
         },
-        { key: "value", label: "Value", align: "right", render: (r) => formatAmount(r.value) },
+        {
+          key: "value",
+          label: "Value",
+          align: "right",
+          render: (r) => <MoneyFigure aggregate={r.value} />,
+        },
         {
           key: "percent",
           label: "% of net worth",
@@ -118,9 +130,11 @@ export function AllocationBreakdownChart({ allocation }: { allocation: Allocatio
             />
             <span>{CLASS_LABELS[s.assetClass] ?? s.assetClass}</span>
             <span className="text-muted-foreground tabular-nums">
-              {s.percentOfNetWorth === null
-                ? formatAmount(s.value)
-                : `${s.percentOfNetWorth.toFixed(1)}%`}
+              {s.percentOfNetWorth === null ? (
+                <MoneyFigure aggregate={s.value} />
+              ) : (
+                `${s.percentOfNetWorth.toFixed(1)}%`
+              )}
             </span>
           </li>
         ))}

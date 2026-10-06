@@ -8,6 +8,7 @@ import type { Goal, GoalPriority } from "@/modules/plans/types";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/format";
 
 const PRIORITY_LABELS: Record<GoalPriority, string> = {
   must_have: "Must have",
@@ -15,8 +16,19 @@ const PRIORITY_LABELS: Record<GoalPriority, string> = {
   aspirational: "Aspirational",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** A holding linked to this goal, as the app layer composes it from finance. */
+export interface LinkedHolding {
+  name: string;
+  currentValueMinor: number;
+  currency: string;
+}
+
+function sumByCurrency(holdings: LinkedHolding[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const holding of holdings) {
+    totals.set(holding.currency, (totals.get(holding.currency) ?? 0) + holding.currentValueMinor);
+  }
+  return totals;
 }
 
 function ProgressBar({ percent }: { percent: number }) {
@@ -65,16 +77,20 @@ function ProgressForm({ goal }: { goal: Goal }) {
   );
 }
 
-export function GoalRow({
-  goal,
-  linkedHoldings,
-}: {
-  goal: Goal;
-  linkedHoldings: { name: string; currentValue: number }[];
-}) {
-  const linkedValue = linkedHoldings.reduce((sum, h) => sum + h.currentValue, 0);
+export function GoalRow({ goal, linkedHoldings }: { goal: Goal; linkedHoldings: LinkedHolding[] }) {
+  /**
+   * Progress is measured only against the holdings denominated in the goal's
+   * own currency. Adding a dollar holding's minor units to a rupee target
+   * would read as a 100× windfall, and converting it here would mean inventing
+   * an FX rate — so anything in another currency is listed separately instead
+   * of folded in. See docs/architecture/data-model.md.
+   */
+  const byCurrency = sumByCurrency(linkedHoldings);
+  const linkedValueMinor = byCurrency.get(goal.currency) ?? 0;
+  const otherCurrencies = [...byCurrency].filter(([currency]) => currency !== goal.currency);
+  const targetMinor = goal.targetAmountMinor;
   const financialPercent =
-    goal.targetAmount && goal.targetAmount > 0 ? (linkedValue / goal.targetAmount) * 100 : null;
+    targetMinor && targetMinor > 0 ? (linkedValueMinor / targetMinor) * 100 : null;
 
   return (
     <TableRow>
@@ -89,12 +105,24 @@ export function GoalRow({
               <span className="text-sm tabular-nums">
                 {linkedHoldings.length === 0
                   ? "No linked holdings"
-                  : `${formatAmount(linkedValue)}${goal.targetAmount ? ` / ${formatAmount(goal.targetAmount)}` : ""}`}
+                  : `${formatMoney({ minor: linkedValueMinor, currency: goal.currency })}${
+                      targetMinor
+                        ? ` / ${formatMoney({ minor: targetMinor, currency: goal.currency })}`
+                        : ""
+                    }`}
               </span>
             </div>
             {linkedHoldings.length > 0 && (
               <span className="text-muted-foreground text-xs">
                 {linkedHoldings.map((h) => h.name).join(", ")}
+              </span>
+            )}
+            {otherCurrencies.length > 0 && (
+              <span className="text-muted-foreground text-xs">
+                Not counted toward this {goal.currency} target:{" "}
+                {otherCurrencies
+                  .map(([currency, minor]) => formatMoney({ minor, currency }))
+                  .join(", ")}
               </span>
             )}
           </div>

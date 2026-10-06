@@ -7,8 +7,58 @@ import type { ActionState } from "@/modules/core/action/types";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
 import { Button } from "@/components/ui/button";
+import { toMajor } from "@/lib/format";
+import { fromRateBps } from "@/modules/finance/service/utility/units";
+import { STATUTORY_TAX_CURRENCY as STATUTORY_CURRENCY } from "@/modules/finance/types";
 
 type TaxSettings = ReturnType<typeof getTaxPolicyView>["settings"];
+
+/**
+ * The form shows the statutory figures the way the Finance Act states them —
+ * rupees and percentages — while storage is INR paise and basis points. The two
+ * maps below are the whole translation, in one place, so a field cannot be
+ * displayed in one unit and submitted in another.
+ *
+ * Field *names* stay the major-unit ones, because they are what the action's
+ * schema parses; the action converts.
+ */
+const MONEY_FIELDS = {
+  eightyCLimit: "eightyCLimitMinor",
+  eightyDLimit: "eightyDLimitMinor",
+  equityLtcgExemption: "equityLtcgExemptionMinor",
+  standardDeductionOld: "standardDeductionOldMinor",
+  standardDeductionNew: "standardDeductionNewMinor",
+  rebate87aThresholdOld: "rebate87aThresholdOldMinor",
+  rebate87aThresholdNew: "rebate87aThresholdNewMinor",
+} as const satisfies Record<string, keyof TaxSettings>;
+
+const RATE_FIELDS = {
+  equityLtcgRate: "equityLtcgRateBps",
+  equityStcgRate: "equityStcgRateBps",
+  otherLtcgRate: "otherLtcgRateBps",
+  otherStcgRate: "otherStcgRateBps",
+  cessPercent: "cessBps",
+} as const satisfies Record<string, keyof TaxSettings>;
+
+const MONTH_FIELDS = {
+  equityLtcgThresholdMonths: "equityLtcgThresholdMonths",
+  otherLtcgThresholdMonths: "otherLtcgThresholdMonths",
+} as const satisfies Record<string, keyof TaxSettings>;
+
+type FormFieldName =
+  keyof typeof MONEY_FIELDS | keyof typeof RATE_FIELDS | keyof typeof MONTH_FIELDS;
+
+/** The stored value for a form field, in the unit the field displays. */
+function displayValue(settings: TaxSettings, name: FormFieldName): number {
+  if (name in MONEY_FIELDS) {
+    const stored = settings[MONEY_FIELDS[name as keyof typeof MONEY_FIELDS]];
+    return toMajor(Number(stored), STATUTORY_CURRENCY);
+  }
+  if (name in RATE_FIELDS) {
+    return fromRateBps(Number(settings[RATE_FIELDS[name as keyof typeof RATE_FIELDS]]));
+  }
+  return Number(settings[MONTH_FIELDS[name as keyof typeof MONTH_FIELDS]]);
+}
 
 const initialState: ActionState = {};
 
@@ -19,7 +69,7 @@ function NumberField({
   hint,
 }: {
   label: string;
-  name: keyof TaxSettings;
+  name: FormFieldName;
   defaultValue: number | string;
   hint?: string;
 }) {
@@ -49,7 +99,7 @@ export function TaxSettingsForm({
 }) {
   const [state, formAction, isPending] = useActionState(updateTaxSettingsAction, initialState);
   // After a failed save React resets the form, so refill it with what was submitted.
-  const valueOf = (name: keyof TaxSettings) => state.values?.[name] ?? Number(settings[name]);
+  const valueOf = (name: FormFieldName) => state.values?.[name] ?? displayValue(settings, name);
   // Keyed by the displayed values (not `updatedAt`, whose second-level SQLite
   // resolution can repeat across two saves in the same second) so an
   // uncontrolled input's defaultValue is guaranteed to remount whenever the
@@ -57,20 +107,20 @@ export function TaxSettingsForm({
   const formKey = [
     state.error ? JSON.stringify(state.values) : "",
     fiscalYear,
-    settings.eightyCLimit,
-    settings.eightyDLimit,
+    settings.eightyCLimitMinor,
+    settings.eightyDLimitMinor,
     settings.equityLtcgThresholdMonths,
-    settings.equityLtcgExemption,
-    settings.equityLtcgRate,
-    settings.equityStcgRate,
+    settings.equityLtcgExemptionMinor,
+    settings.equityLtcgRateBps,
+    settings.equityStcgRateBps,
     settings.otherLtcgThresholdMonths,
-    settings.otherLtcgRate,
-    settings.otherStcgRate,
-    settings.standardDeductionOld,
-    settings.standardDeductionNew,
-    settings.cessPercent,
-    settings.rebate87aThresholdOld,
-    settings.rebate87aThresholdNew,
+    settings.otherLtcgRateBps,
+    settings.otherStcgRateBps,
+    settings.standardDeductionOldMinor,
+    settings.standardDeductionNewMinor,
+    settings.cessBps,
+    settings.rebate87aThresholdOldMinor,
+    settings.rebate87aThresholdNewMinor,
   ].join(",");
 
   return (

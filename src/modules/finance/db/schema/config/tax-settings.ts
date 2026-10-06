@@ -1,5 +1,6 @@
-import { sqliteTable, integer, real, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { minorAmount } from "../currency";
 
 /**
  * Single-row, fully editable reference rates — tax rules change with every
@@ -7,6 +8,11 @@ import { sql } from "drizzle-orm";
  * with FY2024-25-ish defaults that are reasonable ballpark estimates, not
  * guaranteed current; the whole feature is explicitly "estimates only, not
  * a filing tool." See docs/prd/finance/tax-planning.md.
+ *
+ * Every amount here is **statutory INR paise**, not the user's base currency:
+ * these are figures set by the Indian Finance Act, so they do not move when
+ * someone switches their display currency. Rates are integer basis points —
+ * a rate that multiplies money is never a float in this module.
  */
 export const taxSettings = sqliteTable(
   "finance_tax_settings",
@@ -15,26 +21,36 @@ export const taxSettings = sqliteTable(
     /** One row per Indian financial year, e.g. "2025-26". */
     fiscalYear: text("fiscal_year").notNull().default("2024-25"),
 
-    eightyCLimit: real("eighty_c_limit").notNull().default(150000),
-    eightyDLimit: real("eighty_d_limit").notNull().default(25000),
+    eightyCLimitMinor: minorAmount("eighty_c_limit_minor").notNull().default(15_000_000),
+    eightyDLimitMinor: minorAmount("eighty_d_limit_minor").notNull().default(2_500_000),
 
     equityLtcgThresholdMonths: integer("equity_ltcg_threshold_months").notNull().default(12),
-    equityLtcgExemption: real("equity_ltcg_exemption").notNull().default(125000),
-    equityLtcgRate: real("equity_ltcg_rate").notNull().default(12.5),
-    equityStcgRate: real("equity_stcg_rate").notNull().default(20),
+    equityLtcgExemptionMinor: minorAmount("equity_ltcg_exemption_minor")
+      .notNull()
+      .default(12_500_000),
+    equityLtcgRateBps: integer("equity_ltcg_rate_bps").notNull().default(1250),
+    equityStcgRateBps: integer("equity_stcg_rate_bps").notNull().default(2000),
 
     /** International equity, international mutual funds, bonds, gold — not eligible for the special equity rates in Indian tax law. */
     otherLtcgThresholdMonths: integer("other_ltcg_threshold_months").notNull().default(24),
-    otherLtcgRate: real("other_ltcg_rate").notNull().default(20),
-    otherStcgRate: real("other_stcg_rate").notNull().default(30),
+    otherLtcgRateBps: integer("other_ltcg_rate_bps").notNull().default(2000),
+    otherStcgRateBps: integer("other_stcg_rate_bps").notNull().default(3000),
 
-    standardDeductionOld: real("standard_deduction_old").notNull().default(50000),
-    standardDeductionNew: real("standard_deduction_new").notNull().default(75000),
-    cessPercent: real("cess_percent").notNull().default(4),
+    standardDeductionOldMinor: minorAmount("standard_deduction_old_minor")
+      .notNull()
+      .default(5_000_000),
+    standardDeductionNewMinor: minorAmount("standard_deduction_new_minor")
+      .notNull()
+      .default(7_500_000),
+    cessBps: integer("cess_bps").notNull().default(400),
 
     /** Section 87A: taxable income at/below this is fully rebated (flat cutoff — marginal relief above the threshold isn't modeled). */
-    rebate87aThresholdOld: real("rebate_87a_threshold_old").notNull().default(500000),
-    rebate87aThresholdNew: real("rebate_87a_threshold_new").notNull().default(700000),
+    rebate87aThresholdOldMinor: minorAmount("rebate_87a_threshold_old_minor")
+      .notNull()
+      .default(50_000_000),
+    rebate87aThresholdNewMinor: minorAmount("rebate_87a_threshold_new_minor")
+      .notNull()
+      .default(70_000_000),
 
     updatedAt: text("updated_at")
       .notNull()

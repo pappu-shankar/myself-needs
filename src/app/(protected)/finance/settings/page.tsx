@@ -85,7 +85,7 @@ export default async function FinanceSettingsPage({
           </p>
         </CardHeader>
         <CardContent>
-          <AllocationSection targets={allocationTargets} settings={financeSettings} />
+          <AllocationSection report={allocationTargets} settings={financeSettings} />
         </CardContent>
       </Card>
 

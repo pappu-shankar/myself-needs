@@ -10,7 +10,13 @@ export interface Goal {
   type: GoalType;
   priority: GoalPriority;
   targetDate: string | null;
-  targetAmount: number | null;
+  /** Integer amount in `currency`'s minor units, only meaningful for
+   * `type: "financial"`. Never rupees as a float — see
+   * docs/architecture/data-model.md. */
+  targetAmountMinor: number | null;
+  /** The currency `targetAmountMinor` is denominated in; a minor amount can't
+   * be formatted or compared without it. */
+  currency: string;
   progressPercent: number | null;
   note: string | null;
   createdAt: string;

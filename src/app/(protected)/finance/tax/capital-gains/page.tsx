@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { currentFiscalYear, getCapitalGainsEstimate } from "@/modules/finance";
-import { formatAmount } from "@/lib/format";
+import { STATUTORY_CURRENCY } from "@/modules/finance/service/config/tax";
+import { Money } from "../../_components/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -60,35 +61,79 @@ export default async function CapitalGainsPage({
           <p className="text-muted-foreground mt-1 text-sm">
             LTCG = long-term capital gains (held for more than the threshold in Settings), STCG =
             short-term. &quot;Other&quot; covers non-equity holdings — debt, gold, and the rest.
-            Equity LTCG is taxed only above the {formatAmount(capitalGains.equityLtcgExemption)}{" "}
+            Equity LTCG is taxed only above the{" "}
+            <Money minor={capitalGains.equityLtcgExemptionMinor} currency={STATUTORY_CURRENCY} />{" "}
             yearly exemption.
           </p>
         </CardHeader>
         <CardContent>
+          {!capitalGains.complete && (
+            <div
+              role="alert"
+              className="border-destructive text-destructive mb-4 rounded-md border p-3 text-sm"
+            >
+              <p className="font-medium">
+                This estimate is short: {capitalGains.unconverted.length} cash flow
+                {capitalGains.unconverted.length === 1 ? " was" : "s were"} left out because no
+                exchange rate to INR was available for its date. The gains and tax below exclude
+                them.
+              </p>
+              <ul className="mt-2 list-disc pl-5">
+                {capitalGains.unconverted.map((u, i) => (
+                  <li key={`${u.holdingId}-${u.date}-${i}`}>
+                    {u.holdingName}, {u.date}: <Money minor={u.minor} currency={u.currency} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p className="text-muted-foreground text-sm">Equity LTCG</p>
-              <p className="tabular-nums font-semibold">{formatAmount(capitalGains.ltcgEquity)}</p>
+              <p className="tabular-nums font-semibold">
+                <Money minor={capitalGains.ltcgEquityMinor} currency={STATUTORY_CURRENCY} />
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">Equity STCG</p>
-              <p className="tabular-nums font-semibold">{formatAmount(capitalGains.stcgEquity)}</p>
+              <p className="tabular-nums font-semibold">
+                <Money minor={capitalGains.stcgEquityMinor} currency={STATUTORY_CURRENCY} />
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">Other LTCG</p>
-              <p className="tabular-nums font-semibold">{formatAmount(capitalGains.ltcgOther)}</p>
+              <p className="tabular-nums font-semibold">
+                <Money minor={capitalGains.ltcgOtherMinor} currency={STATUTORY_CURRENCY} />
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">Other STCG</p>
-              <p className="tabular-nums font-semibold">{formatAmount(capitalGains.stcgOther)}</p>
+              <p className="tabular-nums font-semibold">
+                <Money minor={capitalGains.stcgOtherMinor} currency={STATUTORY_CURRENCY} />
+              </p>
             </div>
           </div>
           <p className="mb-4 text-sm">
             Estimated tax:{" "}
             <span className="tabular-nums font-semibold">
-              {formatAmount(capitalGains.totalTax)}
+              <Money minor={capitalGains.totalTaxMinor} currency={STATUTORY_CURRENCY} />
             </span>
           </p>
+
+          {capitalGains.conversions.length > 0 && (
+            <div className="text-muted-foreground mb-4 text-sm">
+              <p>Non-INR cash flows were converted to INR at the rate on their own date:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {capitalGains.conversions.map((c, i) => (
+                  <li key={`${c.holdingId}-${c.date}-${i}`} className="tabular-nums">
+                    {c.date}: <Money minor={c.minor} currency={c.currency} /> ={" "}
+                    <Money minor={c.inrMinor} currency={STATUTORY_CURRENCY} /> at{" "}
+                    {(c.rateScaled / 1e8).toFixed(4)} ({c.rateSource}, {c.rateDate})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {capitalGains.events.length === 0 ? (
             <EmptyState
@@ -116,7 +161,7 @@ export default async function CapitalGainsPage({
                       {e.isLongTerm ? "Long-term" : "Short-term"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatAmount(e.gain)}
+                      <Money minor={e.gainMinor} currency={STATUTORY_CURRENCY} />
                     </TableCell>
                   </TableRow>
                 ))}

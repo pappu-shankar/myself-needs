@@ -5,6 +5,7 @@ import {
   confirmRecurringAction,
   type ConfirmRecurringState,
 } from "@/modules/finance/actions/domain/recurring";
+import { toMajor } from "@/lib/format";
 import type { getDueWorklist } from "@/modules/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,16 +53,33 @@ function DueItemRow({ item }: { item: DueItem }) {
         >
           <input type="hidden" name="ruleId" value={item.ruleId} />
           <input type="hidden" name="periodStart" value={item.periodStart} />
-          <FormField label="Amount" htmlFor={`amount-${item.ruleId}-${item.periodStart}`}>
+          <FormField
+            label={`Amount (${item.currency})`}
+            htmlFor={`amount-${item.ruleId}-${item.periodStart}`}
+          >
             <Input
               type="number"
               step="any"
               name="amount"
               required
-              defaultValue={item.suggestedAmount}
+              defaultValue={toMajor(item.suggestedAmountMinor, item.currency)}
               className="tabular-nums"
             />
           </FormField>
+          {item.suggestedToAmountMinor !== null && item.toCurrency !== null && (
+            <FormField
+              label={`Amount received (${item.toCurrency})`}
+              htmlFor={`toAmount-${item.ruleId}-${item.periodStart}`}
+            >
+              <Input
+                type="number"
+                step="any"
+                name="toAmount"
+                defaultValue={toMajor(item.suggestedToAmountMinor, item.toCurrency)}
+                className="tabular-nums"
+              />
+            </FormField>
+          )}
           <FormField label="Date" htmlFor={`date-${item.ruleId}-${item.periodStart}`}>
             <Input type="date" name="date" required defaultValue={item.periodStart} />
           </FormField>

@@ -22,43 +22,43 @@ function todayStr() {
 
 describe("getFinanceSnapshot", () => {
   it("composes every finance sub-service into one snapshot reflecting current DB state", () => {
-    const checking = createAccount({ name: "Checking", type: "checking", openingBalance: 5000 });
+    const checking = createAccount({ name: "Checking", type: "checking", openingBalanceMinor: 500000 });
     const category = createCategory({ name: "Groceries", type: "expense" });
     createTransaction({
       type: "expense",
       accountId: checking.id,
       categoryId: category.id,
-      amount: 100,
+      amountMinor: 10000,
       date: todayStr(),
     });
     createTransaction({
       type: "expense",
       accountId: checking.id,
       categoryId: category.id,
-      amount: 100,
+      amountMinor: 10000,
       date: todayStr(),
     });
-    createTransaction({ type: "expense", accountId: checking.id, amount: 50, date: todayStr() });
+    createTransaction({ type: "expense", accountId: checking.id, amountMinor: 5000, date: todayStr() });
     // Emergency-fund coverage averages the last 3 *complete* months, so the
     // rows above (dated today) fall outside it and it needs history to divide by.
     createTransaction({
       type: "expense",
       accountId: checking.id,
       categoryId: category.id,
-      amount: 100,
+      amountMinor: 10000,
       date: monthsAgo(1),
     });
 
     const holding = createHolding({ type: "equity", name: "Acme Corp" });
-    createValuation({ holdingId: holding.id, date: todayStr(), pricePerUnit: 100 });
+    createValuation({ holdingId: holding.id, date: todayStr(), priceScaled: 100000000 });
 
-    createBudget({ categoryId: category.id, monthlyLimit: 1000, effectiveFrom: monthsAgo(2) });
+    createBudget({ categoryId: category.id, monthlyLimitMinor: 100000, effectiveFrom: monthsAgo(2) });
 
     createInsurancePolicy({
       type: "health",
       provider: "Acme Insurance",
       name: "Family Floater",
-      premiumAmount: 5000,
+      premiumAmountMinor: 500000,
       premiumFrequency: "yearly",
       startDate: monthsAgo(12),
       renewalDate: todayStr(),
@@ -68,7 +68,7 @@ describe("getFinanceSnapshot", () => {
       type: "expense",
       accountId: checking.id,
       categoryId: category.id,
-      amount: 500,
+      amountMinor: 50000,
       frequency: "monthly",
       startDate: monthsAgo(1),
     });
@@ -80,18 +80,19 @@ describe("getFinanceSnapshot", () => {
     expect(snapshot.holdings).toHaveLength(1);
     expect(snapshot.holdings[0]).toMatchObject({ name: "Acme Corp", basis: "valuation" });
     expect(snapshot.budgets.some((b) => b.categoryName === "Groceries")).toBe(true);
-    expect(typeof snapshot.emergencyFundMonths).toBe("number");
+    expect(snapshot.emergencyFundMonths).toHaveProperty("months");
     expect(snapshot.insurancePolicies).toHaveLength(1);
     expect(snapshot.dueWorklist.length).toBeGreaterThan(0);
-    expect(snapshot.eightyC).toMatchObject({ used: 0, limit: 150000 });
-    expect(snapshot.eightyD).toMatchObject({ limit: 25000 });
+    expect(snapshot.eightyC).toMatchObject({ limitMinor: 15000000 });
+    expect(snapshot.eightyD).toMatchObject({ limitMinor: 2500000 });
     expect(snapshot.regime).toHaveProperty("betterRegime");
-    expect(snapshot.capitalGains).toHaveProperty("totalTax");
-    expect(snapshot.taxSettings.eightyCLimit).toBe(150000);
+    expect(snapshot.capitalGains).toHaveProperty("totalTaxMinor");
+    expect(snapshot.eightyC.used.baseMinor).toBe(0);
+    expect(snapshot.taxSettings.eightyCLimitMinor).toBe(15000000);
     expect(snapshot.fy.label).toMatch(/^\d{4}-\d{2}$/);
     // duplicate-transaction group only matches the two identical categorized transactions, not the third (uncategorized, different amount)
     expect(snapshot.duplicateGroups).toHaveLength(1);
-    expect(snapshot.duplicateGroups[0]).toMatchObject({ count: 2, amount: 100 });
+    expect(snapshot.duplicateGroups[0]).toMatchObject({ count: 2, amountMinor: 10000 });
     expect(snapshot.uncategorizedCount).toBe(1);
     expect(snapshot.settings).toMatchObject({
       staleValuationDays: 90,

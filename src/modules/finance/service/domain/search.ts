@@ -1,4 +1,5 @@
 import type { SearchResult } from "@/types/search";
+import { formatMoney } from "@/lib/format";
 import {
   searchAccounts,
   searchCategories,
@@ -40,7 +41,9 @@ export function searchFinance(query: string): SearchResult[] {
       type: "transaction",
       id: transaction.id,
       label: transaction.note ?? "",
-      subtitle: `₹${transaction.amount} · ${transaction.date}`,
+      // Formatted with its own currency rather than a hardcoded ₹: the amount
+      // is minor units, so printing it raw showed paise as rupees.
+      subtitle: `${formatMoney({ minor: transaction.amountMinor, currency: transaction.currency })} · ${transaction.date}`,
       href: "/finance/transactions",
     });
   }
@@ -50,7 +53,7 @@ export function searchFinance(query: string): SearchResult[] {
       type: "recurring_rule",
       id: rule.id,
       label: rule.note ?? "",
-      subtitle: `${rule.frequency} · ₹${rule.amount}`,
+      subtitle: `${rule.frequency} · ${formatMoney({ minor: rule.amountMinor, currency: rule.currency })}`,
       href: "/finance/recurring",
     });
   }

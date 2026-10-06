@@ -4,12 +4,14 @@ import { getDb } from "@/modules/core/db/client";
 import { transactions } from "../../schema/domain/transactions";
 import { accounts } from "../../schema/domain/accounts";
 import { categories } from "../../schema/domain/categories";
+import { live, type LifecycleScope } from "../lifecycle";
+import type { Currency } from "../../schema/currency";
 
 export type NewTransaction = typeof transactions.$inferInsert;
 
 const toAccount = alias(accounts, "to_account");
 
-export interface TransactionsPageFilters {
+export interface TransactionsPageFilters extends LifecycleScope {
   /** Matches either side of a transfer, not just the source, so an account's history shows money in and out. */
   accountId?: number;
 }
@@ -36,9 +38,17 @@ export interface TransactionRow {
   toAccountName: string | null;
   categoryId: number | null;
   categoryName: string | null;
-  amount: number;
+  /** Minor units of `currency`. */
+  amountMinor: number;
+  currency: Currency;
   date: string;
   note: string | null;
+  /** Set when the row has been reversed. A listing only surfaces these when
+   * asked, so a correction trail can show the mistake beside its
+   * replacement without any ordinary listing counting it. */
+  voidedAt: string | null;
+  voidReason: string | null;
+  supersededById: number | null;
 }
 
 export interface TransactionsCursorPage {
@@ -61,9 +71,13 @@ function baseSelectQuery() {
       toAccountName: toAccount.name,
       categoryId: transactions.categoryId,
       categoryName: categories.name,
-      amount: transactions.amount,
+      amountMinor: transactions.amountMinor,
+      currency: transactions.currency,
       date: transactions.date,
       note: transactions.note,
+      voidedAt: transactions.voidedAt,
+      voidReason: transactions.voidReason,
+      supersededById: transactions.supersededById,
     })
     .from(transactions)
     .leftJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -71,13 +85,17 @@ function baseSelectQuery() {
     .leftJoin(categories, eq(transactions.categoryId, categories.id));
 }
 
-function accountFilterCondition(filters: TransactionsPageFilters) {
-  return filters.accountId != null
-    ? or(
-        eq(transactions.accountId, filters.accountId),
-        eq(transactions.toAccountId, filters.accountId),
-      )
-    : undefined;
+/** The account filter and the void filter together — every page query goes
+ * through here so neither can be forgotten at one call site. */
+function listingCondition(filters: TransactionsPageFilters) {
+  const account =
+    filters.accountId != null
+      ? or(
+          eq(transactions.accountId, filters.accountId),
+          eq(transactions.toAccountId, filters.accountId),
+        )
+      : undefined;
+  return and(account, filters.includeVoided ? undefined : live(transactions.voidedAt));
 }
 
 /** Strictly after `cursor` in `(date ASC, id ASC)` order — i.e. strictly before it in `(date DESC, id DESC)` order. */
@@ -107,7 +125,7 @@ export function listTransactionsByCursor(
   params: TransactionsCursorPageParams,
   pageSize = 50,
 ): TransactionsCursorPage {
-  const accountCond = accountFilterCondition(params);
+  const accountCond = listingCondition(params);
 
   if (params.after) {
     // Walking toward the top: fetch ascending (the immediate next-newer rows),
@@ -143,11 +161,8 @@ export function listTransactionsByCursor(
 /** Total transaction count (optionally filtered) — a separate, cheap COUNT query, decoupled from any page's LIMIT/OFFSET. */
 export function countTransactions(filters: TransactionsPageFilters = {}): number {
   return (
-    getDb()
-      .select({ value: count() })
-      .from(transactions)
-      .where(accountFilterCondition(filters))
-      .get()?.value ?? 0
+    getDb().select({ value: count() }).from(transactions).where(listingCondition(filters)).get()
+      ?.value ?? 0
   );
 }
 
@@ -158,12 +173,14 @@ export function listRecentTransactions(limit = 5) {
       type: transactions.type,
       accountName: accounts.name,
       categoryName: categories.name,
-      amount: transactions.amount,
+      amountMinor: transactions.amountMinor,
+      currency: transactions.currency,
       date: transactions.date,
     })
     .from(transactions)
     .leftJoin(accounts, eq(transactions.accountId, accounts.id))
     .leftJoin(categories, eq(transactions.categoryId, categories.id))
+    .where(live(transactions.voidedAt))
     .orderBy(desc(transactions.date), desc(transactions.id))
     .limit(limit)
     .all();

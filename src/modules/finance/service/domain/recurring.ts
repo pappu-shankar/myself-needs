@@ -8,6 +8,7 @@ import {
   type NewRecurringRule,
 } from "../../db/queries/domain/recurring";
 import type { RecurringFrequency } from "../../types";
+import type { Currency } from "../../db/schema/currency";
 import { todayIso } from "@/lib/dates";
 import { DomainError } from "@/modules/core/errors";
 
@@ -15,11 +16,29 @@ function validateRecurringRule(entry: NewRecurringRule): void {
   if (entry.type === "transfer" && entry.toAccountId === entry.accountId) {
     throw new DomainError("A recurring transfer needs a different destination account.");
   }
+  if (!Number.isInteger(entry.amountMinor) || entry.amountMinor <= 0) {
+    throw new DomainError("A recurring amount must be greater than zero.");
+  }
+  // A cross-currency rule states both legs for the same reason a
+  // cross-currency transfer does: the schedule cannot know what rate the bank
+  // will apply, so the pair is what the user expects to move, and the
+  // confirmation records what actually moved.
+  if ((entry.toCurrency == null) !== (entry.toAmountMinor == null)) {
+    throw new DomainError(
+      "A cross-currency recurring rule needs both the amount sent and received.",
+    );
+  }
 }
 
 export function createRecurringRule(entry: NewRecurringRule) {
   validateRecurringRule(entry);
   return insertRecurringRule(entry);
+}
+
+/** One rule, for the action layer: the currencies to convert a typed amount
+ * with come from the rule, not from an assumption. */
+export function getRecurringRule(id: number) {
+  return getRecurringRuleById(id) ?? null;
 }
 
 export function getRecurringRules() {
@@ -94,7 +113,14 @@ export interface DueRecurringItem {
   accountName: string | null;
   toAccountName: string | null;
   categoryName: string | null;
-  suggestedAmount: number;
+  /** Minor units of `currency` — the rule's own currency, which is the source
+   * account's. */
+  suggestedAmountMinor: number;
+  currency: Currency;
+  /** Set only for a cross-currency rule: the expected incoming leg, which the
+   * confirmation may correct to what the bank actually credited. */
+  suggestedToAmountMinor: number | null;
+  toCurrency: Currency | null;
   suggestedNote: string | null;
 }
 
@@ -133,6 +159,14 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
       return !loggedPeriods.has(periodStart);
     });
 
+    if (due.length === 0) continue;
+
+    // `listRecurringRules` joins the display names but not the currency
+    // columns, so the stored row is re-read once per rule that actually has
+    // something due — money without its currency cannot be formatted at all.
+    const row = getRecurringRuleById(rule.id);
+    if (!row) continue;
+
     const subject =
       rule.note ||
       (rule.type === "transfer" ? `Transfer to ${rule.toAccountName}` : rule.categoryName) ||
@@ -147,7 +181,10 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
         accountName: rule.accountName,
         toAccountName: rule.toAccountName,
         categoryName: rule.categoryName,
-        suggestedAmount: rule.amount,
+        suggestedAmountMinor: rule.amount,
+        currency: row.currency,
+        suggestedToAmountMinor: row.toAmountMinor,
+        toCurrency: row.toCurrency as Currency | null,
         suggestedNote: rule.note,
       });
     }
@@ -160,7 +197,12 @@ export interface ConfirmRecurringInput {
   ruleId: number;
   /** The due date (YYYY-MM-DD) of the period being settled — from the due worklist, not freely chosen; re-verified against it below. */
   periodStart: string;
-  amount: number;
+  /** Minor units of the rule's currency. */
+  amountMinor: number;
+  /** Required when the rule is cross-currency: what actually landed in the
+   * destination account. Omitting it is rejected by `createTransaction`
+   * rather than back-filled from a rate the bank did not use. */
+  toAmountMinor?: number | null;
   date: string;
   note: string | null;
 }
@@ -201,7 +243,8 @@ export function confirmRecurringOccurrence(input: ConfirmRecurringInput) {
       accountId: rule.accountId,
       toAccountId: rule.toAccountId,
       categoryId: rule.categoryId,
-      amount: input.amount,
+      amountMinor: input.amountMinor,
+      toAmountMinor: input.toAmountMinor ?? null,
       date: input.date,
       note: input.note,
       recurringRuleId: rule.id,

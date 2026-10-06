@@ -16,6 +16,7 @@
  * FINAL — ready to run.
  */
 import { todayIso } from "@/lib/dates";
+import { formatMoney, toMinor } from "@/lib/format";
 import {
   createAccount,
   createHolding,
@@ -25,9 +26,22 @@ import {
   getAccounts,
   getHoldingsWithValue,
 } from "@/modules/finance";
+// Not on the module barrel: there is no service-level writer for the terms
+// satellites yet, and this script is the only caller that needs one.
+import { upsertLoanTerms } from "@/modules/finance/db/queries/domain/accounts";
+import {
+  toPriceScaled,
+  toRateBps,
+  toUnitsScaled,
+  valueOfUnits,
+} from "@/modules/finance/service/utility/units";
 import { promptPlain, withUserVault } from "./lib/vault-cli";
 
 const TODAY = todayIso();
+/** Everything in this load is rupees; the figures below stay the readable
+ * major-unit numbers from the source spreadsheet and convert here, once. */
+const INR = "INR" as const;
+const inr = (rupees: number) => toMinor(rupees, INR);
 const GOLD_PRICE_PER_GRAM = 13500;
 const SILVER_PRICE_PER_GRAM = 250;
 
@@ -37,7 +51,13 @@ function parseDMY(s: string): string {
   return `20${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
-type StockRow = [symbol: string, category: string, qty: number, avgPrice: number, currentValue: number];
+type StockRow = [
+  symbol: string,
+  category: string,
+  qty: number,
+  avgPrice: number,
+  currentValue: number,
+];
 
 const UPSTOX_STOCKS: StockRow[] = [
   ["CIPLA", "Pharmaceuticals", 1, 1354.4, 1354.4],
@@ -121,7 +141,14 @@ const AIONION_AMMA_STOCKS: StockRow[] = [
   ["DRREDDY", "Pharmaceuticals", 4, 1233.14, 4932.56],
 ];
 
-type BondRow = [lender: string, value: number, ytm: string, maturityDMY: string, couponRatePct: number, frequency: string];
+type BondRow = [
+  lender: string,
+  value: number,
+  ytm: string,
+  maturityDMY: string,
+  couponRatePct: number,
+  frequency: string,
+];
 
 const BONDS: BondRow[] = [
   ["Annapurna finance", 100000, "10.85%", "07/09/29", 12.25, "Monthly"],
@@ -138,26 +165,57 @@ const BONDS: BondRow[] = [
 ];
 
 function addEquity(accountId: number, [symbol, category, qty, avgPrice, currentValue]: StockRow) {
-  const holding = createHolding({ type: "equity", name: symbol, accountId, units: qty, notes: `Category: ${category}` });
-  createCashFlow({ holdingId: holding.id, date: TODAY, amount: -(qty * avgPrice), flowType: "contribution" });
-  createValuation({ holdingId: holding.id, date: TODAY, pricePerUnit: currentValue / qty });
+  const unitsScaled = toUnitsScaled(qty);
+  const holding = createHolding({
+    type: "equity",
+    name: symbol,
+    accountId,
+    unitsScaled,
+    currency: INR,
+    notes: `Category: ${category}`,
+  });
+  // units × price through `valueOfUnits`, not a float multiply: rows like
+  // 56 × 1198.52 land a paisa off in IEEE-754, and this is the cost basis
+  // every XIRR and gain figure is computed against.
+  createCashFlow({
+    holdingId: holding.id,
+    date: TODAY,
+    amountMinor: -valueOfUnits(unitsScaled, toPriceScaled(avgPrice), INR),
+    currency: INR,
+    flowType: "contribution",
+  });
+  createValuation({
+    holdingId: holding.id,
+    date: TODAY,
+    priceScaled: toPriceScaled(currentValue / qty),
+    priceCurrency: INR,
+  });
 }
 
 function addBond([lender, value, ytm, maturityDMY, couponRatePct, frequency]: BondRow) {
   const holding = createHolding({
     type: "bond",
     name: lender,
-    interestRate: couponRatePct,
+    rateBps: toRateBps(couponRatePct),
     maturityDate: parseDMY(maturityDMY),
+    currency: INR,
     notes: `NCD — YTM ${ytm}, coupon ${couponRatePct}% (${frequency})`,
   });
-  createCashFlow({ holdingId: holding.id, date: TODAY, amount: -value, flowType: "contribution" });
+  createCashFlow({
+    holdingId: holding.id,
+    date: TODAY,
+    amountMinor: -inr(value),
+    currency: INR,
+    flowType: "contribution",
+  });
 }
 
 void withUserVault(async () => {
   const existing = getAccounts();
   if (existing.length > 0) {
-    console.log(`Vault already has ${existing.length} account(s). Re-running this script will duplicate data.`);
+    console.log(
+      `Vault already has ${existing.length} account(s). Re-running this script will duplicate data.`,
+    );
     const proceed = await promptPlain('Type "yes" to continue anyway: ');
     if (proceed.trim().toLowerCase() !== "yes") {
       console.log("Aborted.");
@@ -166,29 +224,65 @@ void withUserVault(async () => {
   }
 
   // --- Bank / cash accounts ---
-  createAccount({ name: "Cash", type: "cash", openingBalance: 5000 });
-  createAccount({ name: "ICICI Savings", type: "savings", openingBalance: 5000 });
-  createAccount({ name: "HDFC Savings", type: "savings", openingBalance: 50000 });
-  createAccount({ name: "UCO Savings", type: "savings", openingBalance: 5000 });
+  createAccount({ name: "Cash", type: "cash", openingBalanceMinor: inr(5000) });
+  createAccount({ name: "ICICI Savings", type: "savings", openingBalanceMinor: inr(5000) });
+  createAccount({ name: "HDFC Savings", type: "savings", openingBalanceMinor: inr(50000) });
+  createAccount({ name: "UCO Savings", type: "savings", openingBalanceMinor: inr(5000) });
 
   // --- Receivables (excluded from net worth by default — matches the source spreadsheet) ---
-  createAccount({ name: "Accounts receivable — Suriya", type: "receivable", openingBalance: 231544, excludeFromNetWorth: true });
-  createAccount({ name: "Accounts receivable — Dad", type: "receivable", openingBalance: 1000000, excludeFromNetWorth: true });
+  createAccount({
+    name: "Accounts receivable — Suriya",
+    type: "receivable",
+    openingBalanceMinor: inr(231544),
+    excludeFromNetWorth: true,
+  });
+  createAccount({
+    name: "Accounts receivable — Dad",
+    type: "receivable",
+    openingBalanceMinor: inr(1000000),
+    excludeFromNetWorth: true,
+  });
 
   // --- Liabilities ---
-  createAccount({ name: "Gold Loan", type: "loan", openingBalance: 722139 });
-  createAccount({ name: "Credit Card", type: "credit_card", openingBalance: 4000 });
+  // `kind`/`normalBalance` are stated rather than left to default: the DB CHECK
+  // ties them together, and a liability defaulted to asset/debit would be
+  // summed into net worth with the wrong sign. `createAccount` still takes a
+  // positive "amount owed" and negates it.
+  const liability = { kind: "liability", normalBalance: "credit" } as const;
+  createAccount({
+    name: "Gold Loan",
+    type: "loan",
+    openingBalanceMinor: inr(722139),
+    ...liability,
+  });
+  createAccount({
+    name: "Credit Card",
+    type: "credit_card",
+    openingBalanceMinor: inr(4000),
+    ...liability,
+  });
   // Agreement 155644025 — 1,000,000 @ 10.85%, 36mo, EMI 32,668. 23 of 36 EMIs
   // paid as of TODAY (last paid due 07/08/2026, next due 07/09/2026), so
   // outstanding principal = 398,976 per the bank's repayment schedule.
-  createAccount({
+  const personalLoan = createAccount({
     name: "HDFC Bank Personal Loan",
     type: "loan",
-    openingBalance: 398976,
-    interestRate: 10.85,
-    originalAmount: 1000000,
-    emiAmount: 32668,
+    openingBalanceMinor: inr(398976),
+    ...liability,
+  });
+  // Rate/EMI/tenure/original amount are no longer columns on finance_accounts —
+  // migration 0028 moved them to this one-row-per-account satellite. The rate
+  // is basis points because it multiplies money.
+  upsertLoanTerms({
+    accountId: personalLoan.id,
+    originalAmountMinor: inr(1000000),
+    currency: INR,
+    rateBps: toRateBps(10.85),
+    rateType: "fixed",
     tenureMonths: 36,
+    emiMinor: inr(32668),
+    // 23 EMIs paid with the 24th due 07/09/2026 puts the first at 07/10/2024.
+    firstEmiDate: "2024-10-07",
   });
 
   // --- Insurance ---
@@ -197,19 +291,29 @@ void withUserVault(async () => {
     provider: "HDFC ERGO",
     name: "my:Optima Secure (Parents — Family Floater)",
     policyNumber: "2856206113720102000",
-    sumAssured: 500000,
-    premiumAmount: 33426,
+    sumAssuredMinor: inr(500000),
+    premiumAmountMinor: inr(33426),
+    currency: INR,
     premiumFrequency: "yearly",
     startDate: "2026-02-19",
     renewalDate: "2027-02-18",
     is80dEligible: true,
-    notes: "Insured: S Muthu Vijayan (father, premium 24472) + M Thamilarasi (mother, premium 8955). 80D certificate on file.",
+    notes:
+      "Insured: S Muthu Vijayan (father, premium 24472) + M Thamilarasi (mother, premium 8955). 80D certificate on file.",
   });
 
   // --- Brokerage accounts + equities ---
-  const upstox = createAccount({ name: "Upstox", type: "investment", openingBalance: 0 });
-  const aionionSelf = createAccount({ name: "Aionion Capital (Self)", type: "investment", openingBalance: 0 });
-  const aionionAmma = createAccount({ name: "Aionion Capital (Amma)", type: "investment", openingBalance: 0 });
+  const upstox = createAccount({ name: "Upstox", type: "investment", openingBalanceMinor: 0 });
+  const aionionSelf = createAccount({
+    name: "Aionion Capital (Self)",
+    type: "investment",
+    openingBalanceMinor: 0,
+  });
+  const aionionAmma = createAccount({
+    name: "Aionion Capital (Amma)",
+    type: "investment",
+    openingBalanceMinor: 0,
+  });
 
   for (const row of UPSTOX_STOCKS) addEquity(upstox.id, row);
   for (const row of AIONION_SELF_STOCKS) addEquity(aionionSelf.id, row);
@@ -219,28 +323,120 @@ void withUserVault(async () => {
   for (const bond of BONDS) addBond(bond);
 
   // --- EPF ---
-  const epf = createHolding({ type: "govt_scheme", name: "EPF", notes: "94% can be withdrawn", is80cEligible: true });
-  createCashFlow({ holdingId: epf.id, date: TODAY, amount: -1115542, flowType: "contribution" });
+  const epf = createHolding({
+    type: "govt_scheme",
+    name: "EPF",
+    notes: "94% can be withdrawn",
+    is80cEligible: true,
+    currency: INR,
+  });
+  createCashFlow({
+    holdingId: epf.id,
+    date: TODAY,
+    amountMinor: -inr(1115542),
+    currency: INR,
+    flowType: "contribution",
+  });
 
   // --- Gold / silver ---
-  const digitalGold = createHolding({ type: "gold", name: "Digital gold", units: 2.0024 });
-  createCashFlow({ holdingId: digitalGold.id, date: TODAY, amount: -(2.0024 * 6000), flowType: "contribution" });
-  createValuation({ holdingId: digitalGold.id, date: TODAY, pricePerUnit: GOLD_PRICE_PER_GRAM });
+  // Grams held and the purchase rate per gram, multiplied as scaled integers:
+  // 2.0024 g × ₹6000 is exact this way and off by a fraction of a paisa as a
+  // float, which would leave the cost basis unreconcilable.
+  const digitalGoldUnits = toUnitsScaled(2.0024);
+  const digitalGold = createHolding({
+    type: "gold",
+    name: "Digital gold",
+    unitsScaled: digitalGoldUnits,
+    currency: INR,
+  });
+  createCashFlow({
+    holdingId: digitalGold.id,
+    date: TODAY,
+    amountMinor: -valueOfUnits(digitalGoldUnits, toPriceScaled(6000), INR),
+    currency: INR,
+    flowType: "contribution",
+  });
+  createValuation({
+    holdingId: digitalGold.id,
+    date: TODAY,
+    priceScaled: toPriceScaled(GOLD_PRICE_PER_GRAM),
+    priceCurrency: INR,
+  });
 
-  const jewelleryGold = createHolding({ type: "other_asset", name: "Jewellery gold", units: 252, notes: "22K, avg purchase ₹8000/g" });
-  createCashFlow({ holdingId: jewelleryGold.id, date: TODAY, amount: -(252 * 8000), flowType: "contribution" });
-  createValuation({ holdingId: jewelleryGold.id, date: TODAY, pricePerUnit: GOLD_PRICE_PER_GRAM });
+  const jewelleryGoldUnits = toUnitsScaled(252);
+  const jewelleryGold = createHolding({
+    type: "other_asset",
+    name: "Jewellery gold",
+    unitsScaled: jewelleryGoldUnits,
+    currency: INR,
+    notes: "22K, avg purchase ₹8000/g",
+  });
+  createCashFlow({
+    holdingId: jewelleryGold.id,
+    date: TODAY,
+    amountMinor: -valueOfUnits(jewelleryGoldUnits, toPriceScaled(8000), INR),
+    currency: INR,
+    flowType: "contribution",
+  });
+  createValuation({
+    holdingId: jewelleryGold.id,
+    date: TODAY,
+    priceScaled: toPriceScaled(GOLD_PRICE_PER_GRAM),
+    priceCurrency: INR,
+  });
 
-  const jewellerySilver = createHolding({ type: "other_asset", name: "Jewellery silver", units: 30, notes: "avg purchase ₹130/g" });
-  createCashFlow({ holdingId: jewellerySilver.id, date: TODAY, amount: -(30 * 130), flowType: "contribution" });
-  createValuation({ holdingId: jewellerySilver.id, date: TODAY, pricePerUnit: SILVER_PRICE_PER_GRAM });
+  const jewellerySilverUnits = toUnitsScaled(30);
+  const jewellerySilver = createHolding({
+    type: "other_asset",
+    name: "Jewellery silver",
+    unitsScaled: jewellerySilverUnits,
+    currency: INR,
+    notes: "avg purchase ₹130/g",
+  });
+  createCashFlow({
+    holdingId: jewellerySilver.id,
+    date: TODAY,
+    amountMinor: -valueOfUnits(jewellerySilverUnits, toPriceScaled(130), INR),
+    currency: INR,
+    flowType: "contribution",
+  });
+  createValuation({
+    holdingId: jewellerySilver.id,
+    date: TODAY,
+    priceScaled: toPriceScaled(SILVER_PRICE_PER_GRAM),
+    priceCurrency: INR,
+  });
 
   // --- Summary ---
-  const accountsTotal = getAccounts().reduce((sum, a) => sum + a.balance, 0);
-  const holdingsTotal = getHoldingsWithValue().reduce((sum, h) => sum + h.currentValue, 0);
+  // Per currency, never one combined figure: this load is all rupees, but a
+  // single total would be silently wrong the moment it isn't.
+  const accountsByCurrency = new Map<string, number>();
+  for (const account of getAccounts()) {
+    accountsByCurrency.set(
+      account.currency,
+      (accountsByCurrency.get(account.currency) ?? 0) + account.balanceMinor,
+    );
+  }
+  const holdingsByCurrency = new Map<string, number>();
+  for (const holding of getHoldingsWithValue()) {
+    holdingsByCurrency.set(
+      holding.currency,
+      (holdingsByCurrency.get(holding.currency) ?? 0) + holding.currentValueMinor,
+    );
+  }
+
   console.log("\nDone.");
-  console.log(`Accounts total:  ${accountsTotal.toFixed(2)}`);
-  console.log(`Holdings total:  ${holdingsTotal.toFixed(2)}`);
-  console.log(`Net worth:       ${(accountsTotal + holdingsTotal).toFixed(2)}`);
-  console.log("(Compare against your expected figures — anything still missing wasn't in this run.)");
+  for (const currency of new Set([...accountsByCurrency.keys(), ...holdingsByCurrency.keys()])) {
+    const accountsMinor = accountsByCurrency.get(currency) ?? 0;
+    const holdingsMinor = holdingsByCurrency.get(currency) ?? 0;
+    console.log(`${currency}:`);
+    console.log(`  Accounts total:  ${formatMoney({ minor: accountsMinor, currency })}`);
+    console.log(`  Holdings total:  ${formatMoney({ minor: holdingsMinor, currency })}`);
+    console.log(
+      `  Net worth:       ${formatMoney({ minor: accountsMinor + holdingsMinor, currency })}`,
+    );
+  }
+  console.log(
+    "(Compare against your expected figures — anything still missing wasn't in this run.)",
+  );
 });

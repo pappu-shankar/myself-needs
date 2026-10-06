@@ -1,9 +1,10 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { schemeTemplates } from "./scheme-templates";
 import { entities } from "./entities";
 import { institutions } from "./institutions";
+import { goals } from "./goals";
 import { currencyColumn } from "../currency";
 import { archivableColumns } from "../lifecycle";
 
@@ -49,11 +50,15 @@ export const investmentHoldings = sqliteTable("finance_investment_holdings", {
   country: text("country"),
   marketCapBand: text("market_cap_band", { enum: ["large", "mid", "small", "micro"] }),
 
-  // unit-priced types (equity/mutual funds/gold/bonds) — see investment_valuations
-  units: real("units"),
+  /** Unit-priced types (equity/mutual funds/gold/bonds) — see
+   * investment_valuations. Scaled by `UNITS_SCALE` (1e6) so holding value is
+   * an exact integer product rather than integer units times a float price,
+   * which is what made cash exact while every investment value drifted. */
+  unitsScaled: integer("units_scaled"),
 
-  // FD/RD accrual estimate
-  interestRate: real("interest_rate"),
+  /** FD/RD accrual estimate, in integer basis points — a rate that
+   * multiplies money is never a float here. */
+  rateBps: integer("rate_bps"),
   maturityDate: text("maturity_date"),
 
   // govt schemes only — reference info, doesn't feed valuation
@@ -65,8 +70,13 @@ export const investmentHoldings = sqliteTable("finance_investment_holdings", {
   /** PPF/NSC/SSY, ELSS mutual funds, tax-saver FDs, etc. — a generic flag (mirroring `insurance_policies.is_80c_eligible`) rather than per-type flags, since eligibility is scheme-specific and the user knows their own holdings' status better than a type-based guess would. See docs/prd/finance/tax-planning.md. */
   is80cEligible: integer("is_80c_eligible", { mode: "boolean" }).notNull().default(false),
 
-  /** Points at `plans_goals.id` by plain value only — never a DB-level foreign key, since modules never share schema-level references. See docs/prd/finance/goal-linked-investments.md. */
-  linkedGoalId: integer("linked_goal_id"),
+  /**
+   * The financial goal this holding funds. A real foreign key now: it was a
+   * plain ID only because goals lived in another module, and `finance_goals` is
+   * in this one — so `foreign_key_check`, the safety net every migration runs
+   * through, can enforce it. See docs/prd/finance/goals.md.
+   */
+  linkedGoalId: integer("linked_goal_id").references(() => goals.id),
 
   notes: text("notes"),
   ...archivableColumns(),

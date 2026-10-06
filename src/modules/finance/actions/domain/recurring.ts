@@ -4,8 +4,15 @@ import { z } from "zod";
 import { defineFormAction } from "@/modules/core/action/define-action";
 import type { ActionState } from "@/modules/core/action/types";
 import { zId, zIsoDate, zOptionalText, zPositiveAmount } from "@/lib/validation";
-import { confirmRecurringOccurrence, createRecurringRule } from "../../service/domain/recurring";
+import {
+  confirmRecurringOccurrence,
+  createRecurringRule,
+  getRecurringRule,
+} from "../../service/domain/recurring";
 import { TRANSACTION_TYPES, RECURRING_FREQUENCIES } from "../../types";
+import { toMinor } from "@/lib/format";
+import { DomainError } from "@/modules/core/errors";
+import { getAccountCurrency } from "../../service/domain/accounts";
 
 export type AddRecurringRuleState = ActionState;
 export type ConfirmRecurringState = ActionState;
@@ -39,12 +46,14 @@ const recurringRuleSchema = z
 export const addRecurringRuleAction = defineFormAction(
   recurringRuleSchema,
   (input) => {
+    const currency = getAccountCurrency(input.accountId);
     createRecurringRule({
       type: input.type,
       accountId: input.accountId,
       toAccountId: input.type === "transfer" ? (input.toAccountId ?? null) : null,
       categoryId: input.type === "transfer" ? null : (input.categoryId ?? null),
-      amount: input.amount,
+      amountMinor: toMinor(input.amount, currency),
+      currency,
       frequency: input.frequency,
       startDate: input.startDate,
       endDate: input.endDate ?? null,
@@ -66,14 +75,22 @@ export const confirmRecurringAction = defineFormAction(
     ruleId: zId,
     periodStart: zIsoDate,
     amount: zPositiveAmount,
+    /** Only for a cross-currency rule: what actually landed. */
+    toAmount: zPositiveAmount.optional(),
     date: zIsoDate,
     note: zOptionalText(),
   }),
   (input) => {
+    const rule = getRecurringRule(input.ruleId);
+    if (!rule) throw new DomainError("Recurring rule not found");
     confirmRecurringOccurrence({
       ruleId: input.ruleId,
       periodStart: input.periodStart,
-      amount: input.amount,
+      amountMinor: toMinor(input.amount, rule.currency),
+      toAmountMinor:
+        input.toAmount === undefined || rule.toCurrency === null
+          ? null
+          : toMinor(input.toAmount, rule.toCurrency),
       date: input.date,
       note: input.note ?? null,
     });

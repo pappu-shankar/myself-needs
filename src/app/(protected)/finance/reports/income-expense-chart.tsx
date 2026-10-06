@@ -11,13 +11,10 @@ import {
   YAxis,
 } from "recharts";
 import { ChartCard } from "@/components/ui/chart-card";
+import { formatMoney, toMajor, toMinor } from "@/lib/format";
 import type { getIncomeExpenseReport } from "@/modules/finance";
 
 type TrendPoint = ReturnType<typeof getIncomeExpenseReport>["trend"][number];
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function formatMonthLabel(month: string) {
   const [year, monthNum] = month.split("-").map(Number);
@@ -32,7 +29,9 @@ function IncomeExpenseTooltip({
   active,
   payload,
   label,
+  currency,
 }: {
+  currency: string;
   active?: boolean;
   payload?: { value: number; dataKey: string }[];
   label?: string;
@@ -46,35 +45,68 @@ function IncomeExpenseTooltip({
           <span className={entry.dataKey === "income" ? "text-primary" : "text-destructive"}>
             {entry.dataKey === "income" ? "Income" : "Expense"}
           </span>
-          : <span className="font-semibold">{formatAmount(entry.value)}</span>
+          :{" "}
+          <span className="font-semibold">
+            {formatMoney({ minor: toMinor(entry.value, currency), currency })}
+          </span>
         </p>
       ))}
     </div>
   );
 }
 
-export function IncomeExpenseChart({ trend }: { trend: TrendPoint[] }) {
+/**
+ * The service has already converted each month to the base currency, so this
+ * is one series in `baseCurrency`, never a sum across currencies. Recharts
+ * needs plain numbers, hence major units for the series; the table and tooltip
+ * go back through `formatMoney`.
+ */
+export function IncomeExpenseChart({
+  trend,
+  baseCurrency,
+}: {
+  trend: TrendPoint[];
+  baseCurrency: string;
+}) {
+  const data = trend.map((p) => ({
+    month: p.month,
+    income: toMajor(p.income.baseMinor, baseCurrency),
+    expense: toMajor(p.expense.baseMinor, baseCurrency),
+  }));
+  const incomplete = trend.some((p) => !p.income.complete || !p.expense.complete);
   return (
     <ChartCard
       title="Income vs. expense"
-      description="Monthly totals from your logged transactions."
-      tableData={trend}
+      description={`Monthly totals from your logged transactions, in ${baseCurrency}.`}
+      tableData={data}
       tableColumns={[
         { key: "month", label: "Month", render: (p) => formatMonthLabel(p.month) },
-        { key: "income", label: "Income", align: "right", render: (p) => formatAmount(p.income) },
+        {
+          key: "income",
+          label: "Income",
+          align: "right",
+          render: (p) =>
+            formatMoney({ minor: toMinor(p.income, baseCurrency), currency: baseCurrency }),
+        },
         {
           key: "expense",
           label: "Expense",
           align: "right",
-          render: (p) => formatAmount(p.expense),
+          render: (p) =>
+            formatMoney({ minor: toMinor(p.expense, baseCurrency), currency: baseCurrency }),
         },
       ]}
       emptyTitle="No transactions yet"
       emptyDescription="Log some income and expenses to see this trend."
     >
+      {incomplete && (
+        <p className="text-muted-foreground mb-2 text-xs">
+          Some months exclude a currency with no exchange rate, so those totals are understated.
+        </p>
+      )}
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
             <XAxis
               dataKey="month"
@@ -90,7 +122,10 @@ export function IncomeExpenseChart({ trend }: { trend: TrendPoint[] }) {
               tickLine={false}
               width={64}
             />
-            <Tooltip content={<IncomeExpenseTooltip />} cursor={{ fill: "var(--muted)" }} />
+            <Tooltip
+              content={<IncomeExpenseTooltip currency={baseCurrency} />}
+              cursor={{ fill: "var(--muted)" }}
+            />
             <Legend
               wrapperStyle={{ fontSize: 12, color: "var(--muted-foreground)" }}
               formatter={(v) => (v === "income" ? "Income" : "Expense")}

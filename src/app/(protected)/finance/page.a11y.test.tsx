@@ -18,13 +18,17 @@ describe("finance page accessibility", () => {
   });
 
   it("has no violations with accounts and transactions populated", async () => {
-    const checking = createAccount({ name: "Checking", type: "checking", openingBalance: 5000 });
+    const checking = createAccount({
+      name: "Checking",
+      type: "checking",
+      openingBalanceMinor: 500_000,
+    });
     const groceries = createCategory({ name: "Groceries", type: "expense" });
     createTransaction({
       type: "expense",
       accountId: checking.id,
       categoryId: groceries.id,
-      amount: 120,
+      amountMinor: 12_000,
       date: "2026-08-24",
     });
 

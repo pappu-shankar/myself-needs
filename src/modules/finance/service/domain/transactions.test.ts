@@ -21,7 +21,7 @@ describe("transactions service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 45.5,
+      amountMinor: 4550,
       date: "2026-02-01",
       note: "Weekly shop",
     });
@@ -30,7 +30,7 @@ describe("transactions service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 45.5,
+      amountMinor: 4550,
       note: "Weekly shop",
     });
   });
@@ -46,7 +46,7 @@ describe("transactions service", () => {
         type: "expense",
         accountId: checking.id,
         categoryId: income.id,
-        amount: 10,
+        amountMinor: 1000,
         date: "2026-02-01",
       }),
     ).toThrow("category does not match");
@@ -56,7 +56,7 @@ describe("transactions service", () => {
         accountId: checking.id,
         toAccountId: savings.id,
         categoryId: expense.id,
-        amount: 10,
+        amountMinor: 1000,
         date: "2026-02-01",
       }),
     ).toThrow("Transfers cannot have a category");
@@ -65,7 +65,7 @@ describe("transactions service", () => {
         type: "expense",
         accountId: checking.id,
         categoryId: expense.id,
-        amount: 10,
+        amountMinor: 1000,
         date: "2026-02-31",
       }),
     ).toThrow("valid calendar date");
@@ -80,14 +80,14 @@ describe("transactions service", () => {
       type: "expense",
       accountId: checking.id,
       categoryId: groceries.id,
-      amount: 20,
+      amountMinor: 2000,
       date: "2026-02-01",
     });
     createTransaction({
       type: "transfer",
       accountId: checking.id,
       toAccountId: savings.id,
-      amount: 100,
+      amountMinor: 10000,
       date: "2026-02-02",
     });
 
@@ -114,7 +114,7 @@ describe("transactions service", () => {
         type: "expense",
         accountId: account.id,
         categoryId: category.id,
-        amount: 1,
+        amountMinor: 100,
         date: `2026-01-${day}`,
       });
     }
@@ -158,7 +158,7 @@ describe("transactions service", () => {
         type: "expense",
         accountId: account.id,
         categoryId: category.id,
-        amount: i + 1,
+        amountMinor: (i + 1) * 100,
         date: "2026-05-01",
       }),
     );
@@ -189,21 +189,21 @@ describe("transactions service", () => {
       type: "expense",
       accountId: checking.id,
       categoryId: groceries.id,
-      amount: 20,
+      amountMinor: 2000,
       date: "2026-02-01",
     });
     createTransaction({
       type: "transfer",
       accountId: checking.id,
       toAccountId: savings.id,
-      amount: 100,
+      amountMinor: 10000,
       date: "2026-02-02",
     });
     createTransaction({
       type: "income",
       accountId: dad.id,
       categoryId: repayment.id,
-      amount: 500,
+      amountMinor: 50000,
       date: "2026-02-03",
     });
 
@@ -229,7 +229,7 @@ describe("transactions service", () => {
         type: "expense",
         accountId: account.id,
         categoryId: category.id,
-        amount: i,
+        amountMinor: i * 100,
         date: `2026-01-0${i}`,
       });
     }
@@ -238,7 +238,7 @@ describe("transactions service", () => {
     expect(getRecentTransactions(3)).toHaveLength(3);
 
     const mostRecent = getRecentTransactions(1)[0];
-    expect(mostRecent).toMatchObject({ date: "2026-01-07", amount: 7 });
+    expect(mostRecent).toMatchObject({ date: "2026-01-07", amountMinor: 700 });
   });
 
   it("getHasAnyTransactions reflects whether anything has ever been logged", () => {
@@ -250,10 +250,58 @@ describe("transactions service", () => {
       type: "expense",
       accountId: account.id,
       categoryId: category.id,
-      amount: 1,
+      amountMinor: 100,
       date: "2026-01-01",
     });
 
     expect(getHasAnyTransactions()).toBe(true);
+  });
+
+  describe("transfers between currencies", () => {
+    it("requires the amount received for a cross-currency transfer and stores both legs", () => {
+      const inr = createAccount({ name: "INR", type: "checking" });
+      const usd = createAccount({ name: "USD", type: "checking", currency: "USD" });
+
+      expect(() =>
+        createTransaction({
+          type: "transfer",
+          accountId: inr.id,
+          toAccountId: usd.id,
+          amountMinor: 83000,
+          date: "2026-02-01",
+        }),
+      ).toThrow("needs the amount received");
+
+      const transfer = createTransaction({
+        type: "transfer",
+        accountId: inr.id,
+        toAccountId: usd.id,
+        amountMinor: 83000,
+        toAmountMinor: 1000,
+        date: "2026-02-01",
+      });
+      expect(transfer).toMatchObject({
+        currency: "INR",
+        amountMinor: 83000,
+        toCurrency: "USD",
+        toAmountMinor: 1000,
+      });
+    });
+
+    it("rejects a second leg on a same-currency transfer", () => {
+      const checking = createAccount({ name: "Checking", type: "checking" });
+      const savings = createAccount({ name: "Savings", type: "savings" });
+
+      expect(() =>
+        createTransaction({
+          type: "transfer",
+          accountId: checking.id,
+          toAccountId: savings.id,
+          amountMinor: 10000,
+          toAmountMinor: 10000,
+          date: "2026-02-01",
+        }),
+      ).toThrow("moves a single amount");
+    });
   });
 });

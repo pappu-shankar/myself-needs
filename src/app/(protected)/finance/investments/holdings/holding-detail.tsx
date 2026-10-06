@@ -34,17 +34,28 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField, FormFieldAction } from "@/components/ui/form-field";
+import { formatMoney } from "@/lib/format";
+import { fromUnitsScaled, PRICE_SCALE } from "@/modules/finance/service/utility/units";
 
 type Holding = ReturnType<typeof getHoldingsWithValue>[number];
 type CashFlow = ReturnType<typeof getCashFlowsForHolding>[number];
 type Valuation = ReturnType<typeof getValuationsForHolding>[number];
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Units are stored scaled by UNITS_SCALE (1e6); four decimals is what a
+ * mutual-fund statement shows. */
+function formatUnits(unitsScaled: number) {
+  return fromUnitsScaled(unitsScaled).toLocaleString("en-IN", { maximumFractionDigits: 4 });
 }
 
-function formatUnits(units: number) {
-  return units.toLocaleString("en-IN", { maximumFractionDigits: 4 });
+/** A price is scaled by PRICE_SCALE (1e6) independently of its currency's
+ * exponent — a NAV is quoted to four decimals even in a 2-decimal currency —
+ * so it is not a money amount and does not go through `formatMoney`. */
+function formatPrice(priceScaled: number, currency: string) {
+  const major = priceScaled / PRICE_SCALE;
+  return `${major.toLocaleString(currency === "INR" ? "en-IN" : "en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  })} ${currency}`;
 }
 
 const cashFlowInitial: AddCashFlowState = {};
@@ -113,14 +124,14 @@ function CashFlowSection({
                 </TableCell>
                 {isUnitPriced && (
                   <TableCell className="text-right tabular-nums">
-                    {cf.units === null
+                    {cf.unitsScaled === null
                       ? "—"
-                      : `${cf.units > 0 ? "+" : "−"}${formatUnits(Math.abs(cf.units))}`}
+                      : `${cf.unitsScaled > 0 ? "+" : "−"}${formatUnits(Math.abs(cf.unitsScaled))}`}
                   </TableCell>
                 )}
                 <TableCell className="text-right tabular-nums">
-                  {cf.amount < 0 ? "invested " : "received "}
-                  {formatAmount(Math.abs(cf.amount))}
+                  {cf.amountMinor < 0 ? "invested " : "received "}
+                  {formatMoney({ minor: Math.abs(cf.amountMinor), currency: cf.currency })}
                 </TableCell>
               </TableRow>
             ))}
@@ -260,7 +271,7 @@ function ValuationSection({
               <TableRow key={v.id}>
                 <TableCell className="tabular-nums">{v.date}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatAmount(v.pricePerUnit)}
+                  {formatPrice(v.priceScaled, v.priceCurrency)}
                 </TableCell>
               </TableRow>
             ))}
@@ -341,10 +352,10 @@ function HoldingStatus({ holding }: { holding: Holding }) {
   if (!isUnitPriced && notes.length === 0) return null;
   return (
     <div className="mb-4 flex flex-col gap-1 text-sm">
-      {isUnitPriced && holding.units !== null && (
+      {isUnitPriced && holding.unitsScaled !== null && (
         <p className="text-muted-foreground">
           Units held:{" "}
-          <span className="text-foreground tabular-nums">{formatUnits(holding.units)}</span>
+          <span className="text-foreground tabular-nums">{formatUnits(holding.unitsScaled)}</span>
         </p>
       )}
       {notes.map((n) => (

@@ -5,6 +5,8 @@ import { z } from "zod";
 import { defineFormAction } from "@/modules/core/action/define-action";
 import { createInsurancePolicy } from "../../service/domain/insurance";
 import { INSURANCE_TYPES, RECURRING_FREQUENCIES } from "../../types";
+import { toMinor } from "@/lib/format";
+import { getBaseCurrency } from "../../db/queries/config/settings";
 
 const insurancePolicySchema = z.object({
   type: z.enum(INSURANCE_TYPES),
@@ -51,13 +53,19 @@ export const addInsurancePolicyAction = defineFormAction(
       return { error: parsed.error.issues[0]?.message ?? "Invalid insurance policy" };
     }
 
+    // No currency field on the policy form yet, so a policy is denominated in
+    // what the vault reports in.
+    const currency = getBaseCurrency();
+
     createInsurancePolicy({
       type: parsed.data.type,
       provider: parsed.data.provider,
       name: parsed.data.name,
       policyNumber: parsed.data.policyNumber ?? null,
-      sumAssured: parsed.data.sumAssured ?? null,
-      premiumAmount: parsed.data.premiumAmount,
+      currency,
+      sumAssuredMinor:
+        parsed.data.sumAssured === undefined ? null : toMinor(parsed.data.sumAssured, currency),
+      premiumAmountMinor: toMinor(parsed.data.premiumAmount, currency),
       premiumFrequency: parsed.data.premiumFrequency,
       startDate: parsed.data.startDate,
       renewalDate: parsed.data.renewalDate ?? null,

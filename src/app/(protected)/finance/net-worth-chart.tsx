@@ -11,13 +11,15 @@ import {
   YAxis,
 } from "recharts";
 import { ChartCard } from "@/components/ui/chart-card";
+import { formatMoney, toMajor } from "@/lib/format";
 import type { getNetWorthTrend } from "@/modules/finance";
+import { MoneyFigure } from "./_components/money";
 
 type NetWorthPoint = ReturnType<typeof getNetWorthTrend>[number];
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/** The plotted series is plain major-unit numbers; the full point rides along
+ * so the tooltip and table can show the rate basis and the incomplete flag. */
+type ChartPoint = { month: string; netWorth: number; point: NetWorthPoint };
 
 function formatMonthLabel(month: string) {
   const [year, monthNum] = month.split("-").map(Number);
@@ -33,23 +35,35 @@ function NetWorthTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: { payload: NetWorthPoint }[];
+  payload?: { payload: ChartPoint }[];
 }) {
   if (!active || !payload?.length) return null;
-  const point = payload[0].payload;
+  const { point } = payload[0].payload;
   return (
     <div className="bg-card ring-foreground/10 rounded-md px-3 py-2 text-sm shadow-md ring-1">
-      <p className="tabular-nums font-semibold">{formatAmount(point.netWorth)}</p>
+      <p className="tabular-nums font-semibold">
+        {formatMoney({
+          minor: point.netWorth.baseMinor,
+          currency: point.netWorth.baseCurrency,
+        })}
+        {!point.netWorth.complete && " (incomplete)"}
+      </p>
       <p className="text-muted-foreground text-xs">{formatMonthLabel(point.month)}</p>
     </div>
   );
 }
 
 export function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
+  const currency = points[0]?.netWorth.baseCurrency ?? "INR";
+  const data: ChartPoint[] = points.map((p) => ({
+    month: p.month,
+    netWorth: toMajor(p.netWorth.baseMinor, currency),
+    point: p,
+  }));
   return (
     <ChartCard
       title="Net worth trend"
-      description="Assets minus liabilities, computed fresh each month — not a stored snapshot."
+      description={`Assets minus liabilities in ${currency}, computed fresh each month — not a stored snapshot.`}
       tableData={points}
       tableColumns={[
         { key: "month", label: "Month", render: (p) => formatMonthLabel(p.month) },
@@ -57,7 +71,7 @@ export function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
           key: "netWorth",
           label: "Net worth",
           align: "right",
-          render: (p) => formatAmount(p.netWorth),
+          render: (p) => <MoneyFigure aggregate={p.netWorth} />,
         },
       ]}
       emptyTitle="No net worth history yet"
@@ -65,7 +79,7 @@ export function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
     >
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
             <XAxis
               dataKey="month"

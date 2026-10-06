@@ -1,5 +1,4 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
@@ -23,7 +22,7 @@ export const transactions = sqliteTable(
       .references(() => accounts.id),
     toAccountId: integer("to_account_id").references(() => accounts.id),
     categoryId: integer("category_id").references(() => categories.id),
-    amount: money("amount").notNull(),
+    amountMinor: minorAmount("amount_minor").notNull(),
     currency: currencyColumn(),
     /** Cross-currency transfers carry both legs, so the rate that actually
      * applied is implied by the two amounts and never needs a lookup — the

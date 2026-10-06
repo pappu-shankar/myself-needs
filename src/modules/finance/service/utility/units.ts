@@ -49,3 +49,27 @@ export function toPriceScaled(price: number): number {
 export function fromUnitsScaled(unitsScaled: number): number {
   return unitsScaled / UNITS_SCALE;
 }
+
+/** A rate the user typed as a percentage (7.5) → integer basis points (750).
+ * Rates that multiply money are basis points throughout this module, for the
+ * same reason amounts are minor units. */
+export function toRateBps(percent: number): number {
+  return Math.round(percent * 100);
+}
+
+/** Basis points back to the percentage a form shows (750 → 7.5). */
+export function fromRateBps(bps: number): number {
+  return bps / 100;
+}
+
+/**
+ * `amountMinor × rateBps` as an exact integer, rounded half away from zero.
+ * The product overflows the safe range for large positions, so it goes through
+ * BigInt like every other money multiply here.
+ */
+export function applyRateBps(amountMinor: number, bps: number): number {
+  return toSafeNumber(
+    divRound(BigInt(amountMinor) * BigInt(bps), BigInt(10_000)),
+    "applyRateBps",
+  );
+}

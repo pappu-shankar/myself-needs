@@ -11,7 +11,11 @@ export const CURRENCIES = ["INR", "USD", "GBP", "EUR"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
 /** Minor units per major unit, by currency. All four launch currencies are
- * 2-decimal; the table exists so adding JPY (0) or KWD (3) is a data change. */
+ * 2-decimal; the table exists so adding JPY (0) or KWD (3) is a data change.
+ *
+ * This duplicates what `Intl` knows, deliberately: the BigInt valuation path
+ * needs a plain integer exponent without constructing a formatter. A test
+ * asserts the table agrees with `Intl`, so the two cannot drift. */
 export const CURRENCY_EXPONENT: Record<Currency, number> = {
   INR: 2,
   USD: 2,

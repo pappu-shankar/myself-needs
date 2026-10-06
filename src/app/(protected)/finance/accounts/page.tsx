@@ -14,15 +14,12 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Money } from "../_components/money";
 import { AddAccountDialog } from "./add-account-dialog";
 
 export const metadata: Metadata = {
   title: "Accounts — Personal Life OS",
 };
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default async function AccountsPage() {
   await requireUser();
@@ -72,9 +69,9 @@ export default async function AccountsPage() {
                     {a.type.replace("_", " ")}
                   </TableCell>
                   <TableCell
-                    className={`text-right tabular-nums ${a.balance < 0 ? "text-destructive" : ""}`}
+                    className={`text-right tabular-nums ${a.balanceMinor < 0 ? "text-destructive" : ""}`}
                   >
-                    {formatAmount(a.balance)}
+                    <Money minor={a.balanceMinor} currency={a.currency} />
                   </TableCell>
                 </TableRow>
               ))}

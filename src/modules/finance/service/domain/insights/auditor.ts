@@ -1,25 +1,31 @@
 import type { FinanceSnapshot } from "./snapshot";
 import type { Insight } from "./types";
+import { formatMoney } from "@/lib/format";
 
 /** Physical cash can't be negative — a negative `cash`-type balance is a data-entry problem, not a real financial state. */
 export function implausibleBalanceRule(snapshot: FinanceSnapshot): Insight[] {
   return snapshot.accounts
-    .filter((a) => a.type === "cash" && a.balance < 0)
+    .filter((a) => a.type === "cash" && a.balanceMinor < 0)
     .map((a) => ({
       id: `implausible-balance:${a.id}`,
       category: "audit",
       severity: "warning",
-      message: `"${a.name}" is a cash account with a negative balance of ${formatAmount(a.balance)} — cash can't go negative, so a transaction here is likely wrong.`,
+      // The magnitude, not the signed value: "a negative balance of -₹500" reads
+      // as a double negative.
+      message: `"${a.name}" is a cash account with a negative balance of ${formatMoney({ minor: Math.abs(a.balanceMinor), currency: a.currency })} — cash can't go negative, so a transaction here is likely wrong.`,
       link: "/finance/accounts",
     }));
 }
 
 export function duplicateTransactionsRule(snapshot: FinanceSnapshot): Insight[] {
   return snapshot.duplicateGroups.map((g) => ({
-    id: `duplicate-transaction:${g.accountId}:${g.amount}:${g.date}`,
+    // The amount is in minor units, so the id changes for every row that used
+    // to carry a rupee float — intended: a content-derived id tracks the fact,
+    // and the fact's representation changed.
+    id: `duplicate-transaction:${g.accountId}:${g.amountMinor}:${g.date}`,
     category: "audit",
     severity: "warning",
-    message: `${g.count} transactions of ${formatAmount(g.amount)} on ${g.date} in "${g.accountName}" — check for a double entry.`,
+    message: `${g.count} transactions of ${formatMoney({ minor: g.amountMinor, currency: g.currency })} on ${g.date} in "${g.accountName}" — check for a double entry.`,
     link: "/finance/transactions",
   }));
 }
@@ -87,10 +93,6 @@ export function recurringPileupRule(snapshot: FinanceSnapshot): Insight[] {
     }
   }
   return insights;
-}
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export const AUDITOR_RULES = [
