@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { currentFiscalYear } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
-import { Button } from "@/components/ui/button";
 import { NavCard } from "@/components/ui/nav-card";
 
 export const metadata: Metadata = {
@@ -19,11 +17,6 @@ export default async function TaxPlanningPage() {
       <PageHeader
         title="Tax planning"
         description={`Estimates only — defaults to the current FY ${fy.label}. Not a filing tool, not a substitute for a CA.`}
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

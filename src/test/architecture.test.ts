@@ -263,3 +263,99 @@ describe("Isomorphic health code", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Three invariants about money, added with the Phase 9 re-model.
+ *
+ * Each one encodes a bug class that type-checks, which is why review kept
+ * missing them. Two of the three were found *by writing these rules* on code
+ * that had already been reviewed: a tax action that spread rupee-named fields
+ * into a `Partial<>` patch (so every save was silently a no-op), and slab
+ * actions passing rupees into positional `number` parameters that wanted paise.
+ *
+ * See docs/roadmap/phase-9-finance-remodel.md and
+ * docs/architecture/data-model.md § Money.
+ */
+describe("Money", () => {
+  /** `src/lib/format.ts` defines the formatters, so it is the one file allowed
+   * to handle an amount without a currency beside it. */
+  const FORMAT_LIB = "src/lib/format.ts";
+
+  it("never formats a money value without its currency", () => {
+    // `formatINR` and `formatAmount` hardcode the rupee symbol and `en-IN`
+    // grouping. They were correct when the app was single-currency and are
+    // silently wrong for every other currency — `en-IN` plus USD renders
+    // $1,23,456.70. `formatMoney({ minor, currency })` replaces them, and
+    // takes each currency's exponent and locale from `Intl`.
+    const offenders = sourceFiles
+      .filter(({ file }) => file !== FORMAT_LIB && !file.endsWith(".test.ts"))
+      .filter(({ text }) => /\bformatINR\s*\(/.test(text))
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("has no local re-implementation of a money formatter", () => {
+    // Eleven copy-pasted `formatAmount` helpers existed before this phase, each
+    // assuming rupees and two decimals. A twelfth would reintroduce the
+    // assumption in one view while every other view had dropped it.
+    const offenders = sourceFiles
+      .filter(({ file }) => file !== FORMAT_LIB)
+      .filter(({ text }) =>
+        /function\s+format(Amount|Money|INR|Rupees)\b|const\s+format(Amount|Money|INR|Rupees)\s*=/.test(
+          text,
+        ),
+      )
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("never sums a money column in SQL without currency in the GROUP BY", () => {
+    // Currency is pinned at the account, so SQL may sum freely *within* a
+    // currency. Anything grouping across accounts must return per-currency
+    // subtotals and convert in TypeScript — `SUM(amount * rate)` is float
+    // arithmetic on money, the exact defect integer storage exists to prevent.
+    //
+    // Scoped to the query layer, because that is the only place raw SQL sums
+    // money, and matched per statement so one compliant query in a file does
+    // not excuse a non-compliant one.
+    const MONEY_SUM =
+      /SUM\(\s*-?\s*\$\{[^}]*\.(amountMinor|monthlyLimitMinor|openingBalanceMinor|premiumAmountMinor|sumAssuredMinor|toAmountMinor)\b/;
+    const offenders: string[] = [];
+    for (const { file, text } of sourceFiles.filter(({ file }) =>
+      file.startsWith("src/modules/finance/db/queries/"),
+    )) {
+      for (const call of text.split(/\breturn getDb\(\)|\bconst \w+ = getDb\(\)|\bgetDb\(\)\n/)) {
+        if (!MONEY_SUM.test(call)) continue;
+        // Either the statement groups by currency, or it selects it so the
+        // caller can, or it is explicitly a single-account sum (where currency
+        // is pinned and therefore constant).
+        const groupsByCurrency = /\.groupBy\([^)]*\.currency\b|GROUP BY[^;]*currency/i.test(call);
+        const perAccount = /GROUP BY account_id|\.groupBy\([^)]*\.accountId\b/.test(call);
+        if (!groupsByCurrency && !perAccount) offenders.push(file);
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([]);
+  });
+
+  it("gives every exported money aggregate a confidence", () => {
+    // Confidence propagates by weakest link plus a mix by value (decision 19).
+    // It is an algorithm, not a column, so the only thing that can enforce it
+    // is the shape of the return type: an aggregate that cannot state how much
+    // of itself rests on estimates is an aggregate nobody can audit.
+    //
+    // A type is an "aggregate" here if it carries a base-currency total built
+    // from more than one contributor — which is exactly what `baseMinor` plus
+    // `byCurrency` means.
+    const offenders: string[] = [];
+    for (const { file, text } of sourceFiles.filter(({ file }) =>
+      file.startsWith("src/modules/finance/"),
+    )) {
+      for (const match of text.matchAll(/export interface (\w+)\s*\{([^}]*)\}/g)) {
+        const [, name, body] = match;
+        if (!/\bbaseMinor\b/.test(body) || !/\bbyCurrency\b/.test(body)) continue;
+        if (!/\bconfidence\b/.test(body)) offenders.push(`${file}: ${name}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

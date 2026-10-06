@@ -3,9 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { defineFormAction } from "@/modules/core/action/define-action";
-import { createInsurancePolicy } from "../../service/domain/insurance";
+import {
+  archiveInsurancePolicyById,
+  createInsurancePolicy,
+  deleteInsurancePolicyById,
+  editInsurancePolicy,
+  getInsurancePolicy,
+  unarchiveInsurancePolicyById,
+} from "../../service/domain/insurance";
 import { INSURANCE_TYPES, RECURRING_FREQUENCIES } from "../../types";
 import { toMinor } from "@/lib/format";
+import { zCheckbox, zId, zIsoDate, zOptionalText, zPositiveAmount, zText } from "@/lib/validation";
+import { DomainError } from "@/modules/core/errors";
 import { getBaseCurrency } from "../../db/queries/config/settings";
 
 const insurancePolicySchema = z.object({
@@ -79,4 +88,81 @@ export const addInsurancePolicyAction = defineFormAction(
     revalidatePath("/finance/insurance");
     return {};
   },
+);
+
+/**
+ * Edit / archive / delete.
+ *
+ * Only the fields the form actually changed are sent, and the service re-runs
+ * the create-time validation on the merged row. Major-unit amounts convert with
+ * the **policy's own** currency, read from the stored row rather than assumed —
+ * the create path can default to the base currency because the row does not
+ * exist yet, but an edit must not re-interpret an existing policy's amounts.
+ */
+const editInsurancePolicySchema = z.object({
+  id: zId,
+  type: z.enum(INSURANCE_TYPES).optional(),
+  provider: zText("Provider").optional(),
+  name: zText("Name").optional(),
+  policyNumber: zOptionalText(100),
+  sumAssured: zPositiveAmount.optional(),
+  premiumAmount: zPositiveAmount.optional(),
+  premiumFrequency: z.enum(RECURRING_FREQUENCIES).optional(),
+  startDate: zIsoDate.optional(),
+  renewalDate: zIsoDate.optional(),
+  notes: zOptionalText(),
+  is80cEligible: zCheckbox.optional(),
+  is80dEligible: zCheckbox.optional(),
+});
+
+export const editInsurancePolicyAction = defineFormAction(
+  editInsurancePolicySchema,
+  (input) => {
+    const policy = getInsurancePolicy(input.id);
+    if (!policy) throw new DomainError("That insurance policy no longer exists.");
+    const currency = policy.currency;
+
+    editInsurancePolicy(input.id, {
+      type: input.type,
+      provider: input.provider,
+      name: input.name,
+      policyNumber: input.policyNumber,
+      sumAssuredMinor:
+        input.sumAssured === undefined ? undefined : toMinor(input.sumAssured, currency),
+      premiumAmountMinor:
+        input.premiumAmount === undefined ? undefined : toMinor(input.premiumAmount, currency),
+      premiumFrequency: input.premiumFrequency,
+      startDate: input.startDate,
+      renewalDate: input.renewalDate,
+      notes: input.notes,
+      is80cEligible: input.is80cEligible,
+      is80dEligible: input.is80dEligible,
+    });
+  },
+  { name: "finance:edit-insurance-policy" },
+);
+
+export const archiveInsurancePolicyAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    archiveInsurancePolicyById(input.id);
+  },
+  { name: "finance:archive-insurance-policy" },
+);
+
+export const unarchiveInsurancePolicyAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    unarchiveInsurancePolicyById(input.id);
+  },
+  { name: "finance:unarchive-insurance-policy" },
+);
+
+/** Refused by the service once a premium has been logged under the policy. */
+export const deleteInsurancePolicyAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    deleteInsurancePolicyById(input.id);
+  },
+  { name: "finance:delete-insurance-policy" },
 );

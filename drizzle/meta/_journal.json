@@ -211,6 +211,20 @@
       "when": 1791314472955,
       "tag": "0029_groovy_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791316333674,
+      "tag": "0030_easy_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791316657807,
+      "tag": "0031_cuddly_shotgun",
+      "breakpoints": true
     }
   ]
 }

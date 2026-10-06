@@ -13,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { Money } from "../_components/money";
 import { AddAccountDialog } from "./add-account-dialog";
 
@@ -27,15 +26,7 @@ export default async function AccountsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Accounts"
-        description="Bank accounts, cards, loans, and other balances."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
-      />
+      <PageHeader title="Accounts" description="Bank accounts, cards, loans, and other balances." />
 
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-lg font-medium">All accounts</h2>

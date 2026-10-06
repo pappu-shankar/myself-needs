@@ -17,78 +17,11 @@ import { MoneyFigure } from "./_components/money";
 import { NetWorthChart } from "./net-worth-chart";
 import { InsightsBanner } from "./insights-banner";
 import { GettingStartedChecklist } from "./getting-started-checklist";
+import { FINANCE_SECTIONS } from "./ia-config";
 
 export const metadata: Metadata = {
   title: "Finance — Personal Life OS",
 };
-
-const NAV_ITEMS = [
-  {
-    href: "/finance/accounts",
-    title: "Accounts",
-    description: "Bank accounts, cards, loans, and other balances.",
-  },
-  {
-    href: "/finance/categories",
-    title: "Categories",
-    description: "Income and expense categories.",
-  },
-  {
-    href: "/finance/transactions",
-    title: "Transactions",
-    description: "Income, expenses, and transfers.",
-  },
-  {
-    href: "/finance/budgets",
-    title: "Budgets",
-    description: "Monthly spending limits by category.",
-  },
-  {
-    href: "/finance/recurring",
-    title: "Recurring",
-    description: "Recurring rules and unconfirmed occurrences.",
-  },
-  {
-    href: "/finance/insurance",
-    title: "Insurance",
-    description: "Life, health, term, and vehicle policies.",
-  },
-  {
-    href: "/finance/debts",
-    title: "Debts",
-    description: "Credit cards and loans, with amortization.",
-  },
-  {
-    href: "/finance/investments",
-    title: "Investments",
-    description: "Holdings and scheme reference rates.",
-  },
-  {
-    href: "/finance/reports",
-    title: "Reports",
-    description: "Spending, income, and net worth charts.",
-  },
-  {
-    href: "/finance/tax",
-    title: "Tax",
-    description: "Deductions, regime comparison, and capital gains.",
-  },
-  {
-    href: "/finance/calculators",
-    title: "Calculators",
-    description: "SIP, lumpsum, CAGR, XIRR, IRR, inflation, EMI.",
-  },
-  {
-    href: "/finance/insights",
-    title: "Insights",
-    description: "Audits, advice, and compliance nudges.",
-  },
-  {
-    href: "/finance/settings",
-    title: "Settings",
-    description: "Allocation targets, tax rates, and insight thresholds.",
-  },
-] as const;
 
 export default async function FinancePage() {
   await requireUser();
@@ -139,16 +72,32 @@ export default async function FinancePage() {
 
       {showGettingStarted && <GettingStartedChecklist steps={gettingStartedSteps} />}
 
-      <div className="mb-6 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {NAV_ITEMS.map((item) => (
-          <NavCard
-            key={item.href}
-            href={item.href}
-            title={item.title}
-            description={item.description}
-          />
-        ))}
-      </div>
+      {/* Grouped by section rather than one flat grid of fourteen cards, and
+          derived from `ia-config.ts` so the hub, the section nav and the
+          breadcrumb trail cannot drift apart the way the five hand-synced
+          copies did. */}
+      {FINANCE_SECTIONS.map((section) => {
+        const pages = section.pages.filter((page) => !page.planned);
+        if (pages.length === 0) return null;
+        return (
+          <section key={section.id} className="mb-6">
+            <h2 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
+              {section.label}
+            </h2>
+            <p className="text-muted-foreground mb-3 text-sm">{section.summary}</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {pages.map((page) => (
+                <NavCard
+                  key={page.href}
+                  href={page.href}
+                  title={page.title}
+                  description={page.description}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       <InsightsBanner insights={insights} />
 

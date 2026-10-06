@@ -17,25 +17,83 @@ export {
   getNetWorthByCurrency,
   getNetWorth,
   createAccount,
+  /* Lifecycle: edit in place, archive rather than delete, and refuse a delete
+   * that history references — see docs/prd/finance/provenance-lifecycle.md. */
+  editAccount,
+  archiveAccountById,
+  unarchiveAccountById,
+  deleteAccountById,
 } from "./service/domain/accounts";
-export { getCategories, getCategoriesByType, createCategory } from "./service/domain/categories";
+export {
+  getCategories,
+  getCategoriesByType,
+  getCategory,
+  createCategory,
+  editCategory,
+  archiveCategoryById,
+  unarchiveCategoryById,
+  deleteCategoryById,
+} from "./service/domain/categories";
 export {
   getTransactionsPage,
   getTransactionsCount,
   getHasAnyTransactions,
   getRecentTransactions,
   createTransaction,
+  getTransaction,
+  /** The void and its replacement together, read forward from the mistake to
+   * the fix — the correction trail. */
+  getTransactionCorrectionTrail,
+  voidTransaction,
+  correctTransaction,
 } from "./service/domain/transactions";
 export type {
   TransactionsCursor,
   TransactionsCursorPageParams,
   TransactionRow,
 } from "./db/queries/domain/transactions";
-export { getBudgetsForMonth, createBudget } from "./service/domain/budgets";
-export { getRecurringRules, getDueWorklist, createRecurringRule } from "./service/domain/recurring";
-export { getInsurancePolicies, createInsurancePolicy } from "./service/domain/insurance";
+export {
+  getBudgetsForMonth,
+  createBudget,
+  getBudgetSpend,
+  type BudgetForMonth,
+} from "./service/domain/budgets";
+export {
+  getRecurringRules,
+  getRecurringRule,
+  getDueWorklist,
+  createRecurringRule,
+  editRecurringRule,
+  /* Pause and archive are different: pausing stops future due periods on a rule
+   * still expected to resume, archiving retires the arrangement entirely. */
+  pauseRecurringRuleById,
+  resumeRecurringRuleById,
+  archiveRecurringRuleById,
+  unarchiveRecurringRuleById,
+  deleteRecurringRuleById,
+} from "./service/domain/recurring";
+export {
+  getInsurancePolicies,
+  getInsurancePolicy,
+  createInsurancePolicy,
+  editInsurancePolicy,
+  archiveInsurancePolicyById,
+  unarchiveInsurancePolicyById,
+  deleteInsurancePolicyById,
+} from "./service/domain/insurance";
 export { getSchemeTemplates, createSchemeTemplate } from "./service/domain/scheme-templates";
 export { getNetWorthTrend } from "./service/domain/net-worth";
+export {
+  getGoals,
+  getGoal,
+  createGoal,
+  editGoal,
+  retireGoal,
+  getGoalProgress,
+  getFundingPlan,
+  type GoalProgress,
+  type FundingPlan,
+} from "./service/domain/goals";
 export { getIncomeExpenseReport, getEmergencyFundMonths } from "./service/domain/reports";
 export { getCurrentAllocation, getAllocationReport } from "./service/domain/allocation";
 export { getFinanceSettings } from "./service/config/allocation";
@@ -71,6 +129,10 @@ export {
   createHolding,
   createCashFlow,
   createValuation,
+  getCashFlow,
+  getCashFlowCorrectionTrail,
+  voidCashFlow,
+  correctCashFlow,
 } from "./service/domain/investments";
 export { addAccountAction, type AddAccountState } from "./actions/domain/accounts";
 export { addCategoryAction, type AddCategoryState } from "./actions/domain/categories";

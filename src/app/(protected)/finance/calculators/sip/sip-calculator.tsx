@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toMajor, toMinor } from "@/lib/format";
+import { toMinor, formatMoney } from "@/lib/format";
 import { toRateBps } from "@/modules/finance/service/utility/units";
 import { computeSipFutureValue } from "@/modules/finance/service/utility/returns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,12 +12,10 @@ import { FormField } from "@/components/ui/form-field";
 // minor units / basis points only at the shared helper's boundary.
 const CURRENCY = "INR";
 
-function formatAmount(minor: number) {
-  return toMajor(minor, CURRENCY).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+/** A calculator works in one currency the user implicitly chose by typing
+ * rupees; it reads no stored money. Stated explicitly so the figure is
+ * still never formatted without a currency beside it. */
+const money = (minor: number) => formatMoney({ minor, currency: CURRENCY });
 
 export function SipCalculator() {
   const [monthlyAmount, setMonthlyAmount] = useState(10000);
@@ -74,21 +72,15 @@ export function SipCalculator() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <p className="text-muted-foreground text-sm">Future value</p>
-            <p className="tabular-nums text-xl font-semibold">
-              {formatAmount(result.futureValueMinor)}
-            </p>
+            <p className="tabular-nums text-xl font-semibold">{money(result.futureValueMinor)}</p>
           </div>
           <div>
             <p className="text-muted-foreground text-sm">Total invested</p>
-            <p className="tabular-nums text-xl font-semibold">
-              {formatAmount(result.totalInvestedMinor)}
-            </p>
+            <p className="tabular-nums text-xl font-semibold">{money(result.totalInvestedMinor)}</p>
           </div>
           <div>
             <p className="text-muted-foreground text-sm">Total gain</p>
-            <p className="tabular-nums text-xl font-semibold">
-              {formatAmount(result.totalGainMinor)}
-            </p>
+            <p className="tabular-nums text-xl font-semibold">{money(result.totalGainMinor)}</p>
           </div>
         </div>
       </CardContent>

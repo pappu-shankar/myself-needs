@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
 import { todayIso } from "@/lib/dates";
-import Link from "next/link";
 import { getRecurringRules, getInsurancePolicies } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
@@ -14,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/format";
 import { AddInsuranceDialog } from "./add-insurance-dialog";
 
@@ -33,11 +31,6 @@ export default async function InsurancePage() {
       <PageHeader
         title="Insurance"
         description="Life, health, term, and vehicle insurance policies."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="mb-4 flex items-center justify-between gap-4">

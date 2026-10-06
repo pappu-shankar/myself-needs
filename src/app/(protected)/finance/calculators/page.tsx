@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
-import { Button } from "@/components/ui/button";
 import { NavCard } from "@/components/ui/nav-card";
 
 export const metadata: Metadata = {
@@ -23,11 +21,6 @@ export default async function CalculatorsPage() {
       <PageHeader
         title="Calculators"
         description="Sandbox math — nothing here reads or writes your real data."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="flex flex-col gap-2">

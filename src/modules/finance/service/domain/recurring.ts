@@ -1,12 +1,19 @@
 import { createTransaction } from "./transactions";
 import {
+  archiveRecurringRule,
   countLegacyLoggedForRule,
+  deleteRecurringRule,
   getRecurringRuleById,
   insertRecurringRule,
   listLoggedPeriodStartsForRule,
   listRecurringRules,
+  pauseRecurringRule,
+  recurringRuleHasConfirmations,
+  recurringRuleHasLinkedPolicy,
+  updateRecurringRule,
   type NewRecurringRule,
 } from "../../db/queries/domain/recurring";
+import type { LifecycleScope } from "../../db/queries/lifecycle";
 import type { RecurringFrequency } from "../../types";
 import type { Currency } from "../../db/schema/currency";
 import { todayIso } from "@/lib/dates";
@@ -41,8 +48,8 @@ export function getRecurringRule(id: number) {
   return getRecurringRuleById(id) ?? null;
 }
 
-export function getRecurringRules() {
-  return listRecurringRules();
+export function getRecurringRules(scope: LifecycleScope = {}) {
+  return listRecurringRules(scope);
 }
 
 /** Adds `months` (clamping the day to the target month's length, e.g. the 31st of a 30-day month becomes the 30th). */
@@ -151,6 +158,10 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
   const items: DueRecurringItem[] = [];
 
   for (const rule of rules) {
+    // A paused rule produces nothing. Archived rules never reach here — the
+    // listing already excludes them — but pausing is the *reversible* state and
+    // has to be honoured separately, or pausing would do nothing at all.
+    if (rule.pausedAt) continue;
     const periods = generatePeriodStarts(rule, today);
     const legacyCount = countLegacyLoggedForRule(rule.id);
     const loggedPeriods = new Set(listLoggedPeriodStartsForRule(rule.id));
@@ -181,7 +192,7 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
         accountName: rule.accountName,
         toAccountName: rule.toAccountName,
         categoryName: rule.categoryName,
-        suggestedAmountMinor: rule.amount,
+        suggestedAmountMinor: rule.amountMinor,
         currency: row.currency,
         suggestedToAmountMinor: row.toAmountMinor,
         toCurrency: row.toCurrency as Currency | null,
@@ -256,4 +267,114 @@ export function confirmRecurringOccurrence(input: ConfirmRecurringInput) {
     }
     throw err;
   }
+}
+
+/* ── Edit in place, pause, archive, delete (decision 17) ─────────────────────
+ * A rule describes a schedule; it is not a ledger entry. Editing it changes
+ * what future periods will suggest and never rewrites a confirmed transaction,
+ * which is its own immutable row.
+ *
+ * Three retire-ish states, deliberately distinct:
+ *  - **pause** — temporarily stop producing due periods; the rule stays in
+ *    listings and is expected to resume.
+ *  - **archive** — the arrangement has ended; the rule leaves listings and
+ *    pickers, and its confirmed history stays exactly as it is.
+ *  - **delete** — only for a rule nothing references at all. */
+
+/**
+ * Edits a rule in place, re-running the same validation `createRecurringRule`
+ * applies to the merged row.
+ *
+ * `start_date` and `frequency` are refused once the rule has confirmed
+ * transactions. Those two are what the period schedule is *derived* from, and
+ * each confirmation is keyed to the exact `period_start` it settled — move the
+ * schedule and the settled keys no longer line up with any generated period, so
+ * periods already paid for reappear in the due worklist while the transaction
+ * that paid them sits under a period that no longer exists. That is a rewrite of
+ * confirmed history by side effect, which the PRD's "edit future occurrences
+ * only" exists to prevent. End the rule and start a new one instead.
+ */
+export function editRecurringRule(id: number, patch: Partial<Omit<NewRecurringRule, "id">>) {
+  const existing = getRecurringRuleById(id);
+  if (!existing) throw new DomainError("Recurring rule not found");
+
+  const merged = { ...existing, ...patch } as NewRecurringRule;
+  validateRecurringRule(merged);
+
+  const scheduleMoved =
+    (patch.startDate !== undefined && patch.startDate !== existing.startDate) ||
+    (patch.frequency !== undefined && patch.frequency !== existing.frequency);
+  if (scheduleMoved && recurringRuleHasConfirmations(id)) {
+    throw new DomainError(
+      "This rule already has confirmed transactions, so its start date and frequency can't be " +
+        "changed — the periods already logged are keyed to the current schedule. Set an end " +
+        "date on this rule and create a new one for the new schedule instead.",
+    );
+  }
+
+  // Same reason as an account's: the rule's amount is stored in minor units of
+  // this currency, so re-denominating it silently restates every suggestion the
+  // rule has made and will make.
+  if (patch.currency !== undefined && patch.currency !== existing.currency) {
+    if (recurringRuleHasConfirmations(id)) {
+      throw new DomainError(
+        "This rule already has confirmed transactions, so its currency can't be changed. " +
+          "Archive it and create a new rule in the other currency instead.",
+      );
+    }
+  }
+
+  return updateRecurringRule(id, patch);
+}
+
+/** Stops future due periods without retiring the rule. Reversible with
+ * `resumeRecurringRuleById`; nothing already confirmed is touched. */
+export function pauseRecurringRuleById(id: number) {
+  if (!getRecurringRuleById(id)) throw new DomainError("Recurring rule not found");
+  return pauseRecurringRule(id, todayIso());
+}
+
+export function resumeRecurringRuleById(id: number) {
+  if (!getRecurringRuleById(id)) throw new DomainError("Recurring rule not found");
+  return pauseRecurringRule(id, null);
+}
+
+/**
+ * Retires the rule: it leaves listings, pickers and the due worklist, while
+ * every transaction it produced keeps counting. Distinct from pausing — see the
+ * block comment above.
+ */
+export function archiveRecurringRuleById(id: number) {
+  if (!getRecurringRuleById(id)) throw new DomainError("Recurring rule not found");
+  return archiveRecurringRule(id, todayIso());
+}
+
+export function unarchiveRecurringRuleById(id: number) {
+  if (!getRecurringRuleById(id)) throw new DomainError("Recurring rule not found");
+  return archiveRecurringRule(id, null);
+}
+
+/**
+ * Hard-deletes a rule, and **refuses** when a confirmed transaction or an
+ * insurance policy references it.
+ *
+ * A transaction tagged with a deleted rule loses the only record of which
+ * schedule it settled, which also loses the `(rule, period_start)` key the due
+ * worklist uses to know the period is done.
+ */
+export function deleteRecurringRuleById(id: number) {
+  if (!getRecurringRuleById(id)) throw new DomainError("Recurring rule not found");
+  if (recurringRuleHasConfirmations(id)) {
+    throw new DomainError(
+      "This rule already has confirmed transactions, so it can't be deleted. Archive it " +
+        "instead — it will stop appearing anywhere and the logged history stays intact.",
+    );
+  }
+  if (recurringRuleHasLinkedPolicy(id)) {
+    throw new DomainError(
+      "An insurance policy uses this rule for its premium schedule, so it can't be deleted. " +
+        "Unlink it from the policy first, or archive it instead.",
+    );
+  }
+  deleteRecurringRule(id);
 }

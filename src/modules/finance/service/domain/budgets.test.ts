@@ -139,7 +139,8 @@ describe("budgets service", () => {
 
     const result = getBudgetsForMonth("2026-03").find((r) => r.categoryName === "Dining");
 
-    expect(result?.actualSpendMinor).toBe(8_000);
+    expect(result?.spend.baseMinor).toBe(8_000);
+    expect(result?.spend.complete).toBe(true);
   });
 
   it("reports zero actual spend for a budgeted category with no transactions", () => {
@@ -152,7 +153,7 @@ describe("budgets service", () => {
 
     const result = getBudgetsForMonth("2026-05").find((r) => r.categoryName === "Travel");
 
-    expect(result?.actualSpendMinor).toBe(0);
+    expect(result?.spend.baseMinor).toBe(0);
   });
 
   it("setting a budget again for the same category and effective date upserts instead of erroring, and the category is listed only once", () => {
@@ -238,5 +239,94 @@ describe("budgets service", () => {
       expect(spend.complete).toBe(false);
       expect(spend.byCurrency.find((c) => c.currency === "USD")?.baseMinor).toBeNull();
     });
+  });
+});
+
+describe("budgets across currencies", () => {
+  it("compares spend against the limit in the budget's own currency, not the base", async () => {
+    // The limit is a promise made in a specific currency. Comparing in the
+    // vault's base currency would make an on-target budget appear to overrun
+    // whenever the base moved against it.
+    const { upsertFxRates } = await import("../../db/queries/config/fx-rates");
+    const inr = createAccount({
+      name: "HDFC",
+      type: "savings",
+      currency: "INR",
+      openingBalanceMinor: 0,
+    });
+    const usd = createAccount({
+      name: "Chase",
+      type: "savings",
+      currency: "USD",
+      openingBalanceMinor: 0,
+    });
+    const travel = createCategory({ name: "Travel", type: "expense" });
+    // A ₹50,000 budget, spent partly in rupees and partly in dollars.
+    createBudget({
+      categoryId: travel.id,
+      monthlyLimitMinor: 5_000_000,
+      currency: "INR",
+      effectiveFrom: "2026-03-01",
+    });
+    // EUR pivot, as the ECB publishes: one EUR buys this much of the quote.
+    upsertFxRates([
+      { base: "EUR", quote: "INR", date: "2026-03-01", rateScaled: 90 * 1e8, source: "test" },
+      { base: "EUR", quote: "USD", date: "2026-03-01", rateScaled: 1.08 * 1e8, source: "test" },
+    ]);
+
+    createTransaction({
+      type: "expense",
+      accountId: inr.id,
+      categoryId: travel.id,
+      amountMinor: 1_000_000,
+      date: "2026-03-05",
+    });
+    createTransaction({
+      type: "expense",
+      accountId: usd.id,
+      categoryId: travel.id,
+      amountMinor: 10_000,
+      date: "2026-03-06",
+    });
+
+    const row = getBudgetsForMonth("2026-03").find((r) => r.categoryName === "Travel")!;
+
+    // $100 → EUR 92.59 → ₹8,333.33, plus the ₹10,000 already in INR.
+    expect(row.spend.baseCurrency).toBe("INR");
+    expect(row.spend.baseMinor).toBe(1_000_000 + 833_333);
+    expect(row.spend.complete).toBe(true);
+    expect(row.overBudget).toBe(false);
+  });
+
+  it("withholds the over-budget verdict when a currency could not be converted", () => {
+    // No rates are stored at all here, so the dollar spend cannot be converted.
+    // Reporting "under budget" off the rupee half alone is the dangerous
+    // direction, so the verdict is withheld rather than guessed.
+    const usd = createAccount({
+      name: "Chase",
+      type: "savings",
+      currency: "USD",
+      openingBalanceMinor: 0,
+    });
+    const travel = createCategory({ name: "Travel", type: "expense" });
+    createBudget({
+      categoryId: travel.id,
+      monthlyLimitMinor: 100_000,
+      currency: "INR",
+      effectiveFrom: "2026-03-01",
+    });
+    createTransaction({
+      type: "expense",
+      accountId: usd.id,
+      categoryId: travel.id,
+      amountMinor: 500_000,
+      date: "2026-03-06",
+    });
+
+    const row = getBudgetsForMonth("2026-03").find((r) => r.categoryName === "Travel")!;
+
+    expect(row.spend.complete).toBe(false);
+    expect(row.overBudget).toBeNull();
+    expect(row.spend.byCurrency.find((c) => c.currency === "USD")?.baseMinor).toBeNull();
   });
 });

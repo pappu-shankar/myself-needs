@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { toMajor, toMinor } from "@/lib/format";
+import { toMinor, formatMoney } from "@/lib/format";
 import { toRateBps } from "@/modules/finance/service/utility/units";
 import {
   computeAmortizationSchedule,
@@ -18,42 +18,40 @@ import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
 // minor units / basis points only at the shared helpers' boundary.
 const CURRENCY = "INR";
 
-function formatAmount(minor: number) {
-  return toMajor(minor, CURRENCY).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 const columns: DataTableColumnDef<AmortizationRow>[] = [
   { accessorKey: "period", header: "EMI #", meta: { width: "80px" } },
   {
     accessorKey: "openingBalanceMinor",
     header: "Opening balance",
     meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
+    cell: ({ getValue }) => money(getValue<number>()),
   },
   {
     accessorKey: "interestMinor",
     header: "Interest",
     meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
+    cell: ({ getValue }) => money(getValue<number>()),
   },
   {
     accessorKey: "principalMinor",
     header: "Principal",
     meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
+    cell: ({ getValue }) => money(getValue<number>()),
   },
   {
     accessorKey: "closingBalanceMinor",
     header: "Closing balance",
     meta: { align: "right" },
-    cell: ({ getValue }) => formatAmount(getValue<number>()),
+    cell: ({ getValue }) => money(getValue<number>()),
   },
 ];
 
 /** EMI / Loan calculator — derives the EMI from principal/rate/tenure, then reuses the exact same schedule + prepayment functions as the real Debts view. */
+/** A calculator works in one currency the user implicitly chose by typing
+ * rupees; it reads no stored money. Stated explicitly so the figure is
+ * still never formatted without a currency beside it. */
+const money = (minor: number) => formatMoney({ minor, currency: CURRENCY });
+
 export function EmiCalculator() {
   const [principal, setPrincipal] = useState(2000000);
   const [annualRate, setAnnualRate] = useState(9);
@@ -146,21 +144,19 @@ export function EmiCalculator() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="text-muted-foreground text-sm">EMI amount</p>
-            <p className="tabular-nums text-xl font-semibold">{formatAmount(emiMinor)}</p>
+            <p className="tabular-nums text-xl font-semibold">{money(emiMinor)}</p>
           </div>
           <div>
             <p className="text-muted-foreground text-sm">Total interest over tenure</p>
-            <p className="tabular-nums text-xl font-semibold">{formatAmount(totalInterest)}</p>
+            <p className="tabular-nums text-xl font-semibold">{money(totalInterest)}</p>
           </div>
         </div>
 
         {extraPayment > 0 && (
           <p className="text-sm">
             Saves{" "}
-            <span className="tabular-nums font-medium">
-              {formatAmount(impact.interestSavedMinor)}
-            </span>{" "}
-            in interest and <span className="tabular-nums font-medium">{impact.monthsSaved}</span>{" "}
+            <span className="tabular-nums font-medium">{money(impact.interestSavedMinor)}</span> in
+            interest and <span className="tabular-nums font-medium">{impact.monthsSaved}</span>{" "}
             month{impact.monthsSaved === 1 ? "" : "s"} of tenure.
           </p>
         )}

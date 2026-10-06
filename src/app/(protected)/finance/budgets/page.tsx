@@ -13,9 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/format";
 import { AddBudgetDialog } from "./add-budget-dialog";
+import { MoneyFigure } from "../_components/money";
 
 export const metadata: Metadata = {
   title: "Budgets — Personal Life OS",
@@ -28,15 +28,7 @@ export default async function BudgetsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Budgets"
-        description="Monthly spending limits by category."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
-      />
+      <PageHeader title="Budgets" description="Monthly spending limits by category." />
 
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-lg font-medium">This month&apos;s budgets</h2>
@@ -76,8 +68,11 @@ export default async function BudgetsPage() {
             </TableHeader>
             <TableBody>
               {budgets.map((b) => {
-                const remaining = b.monthlyLimitMinor - b.actualSpendMinor;
-                const isOver = remaining < 0;
+                const remaining = b.monthlyLimitMinor - b.spend.baseMinor;
+                // Null when the spend figure is incomplete: "over budget" needs
+                // the whole number, and a budget that looks under because a
+                // currency would not convert is the worst way to be wrong.
+                const isOver = b.overBudget;
                 return (
                   <TableRow key={b.categoryId}>
                     <TableCell>{b.categoryName}</TableCell>
@@ -85,14 +80,16 @@ export default async function BudgetsPage() {
                       {formatMoney({ minor: b.monthlyLimitMinor, currency: b.currency })}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatMoney({ minor: b.actualSpendMinor, currency: b.currency })}
+                      <MoneyFigure aggregate={b.spend} />
                     </TableCell>
                     <TableCell
                       className={`text-right tabular-nums ${isOver ? "text-destructive" : ""}`}
                     >
-                      {isOver
-                        ? `Over by ${formatMoney({ minor: Math.abs(remaining), currency: b.currency })}`
-                        : formatMoney({ minor: remaining, currency: b.currency })}
+                      {isOver === null
+                        ? "—"
+                        : isOver
+                          ? `Over by ${formatMoney({ minor: Math.abs(remaining), currency: b.currency })}`
+                          : formatMoney({ minor: remaining, currency: b.currency })}
                     </TableCell>
                   </TableRow>
                 );

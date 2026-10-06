@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import {
   getFinanceSettings,
   getAllocationReport,
@@ -14,7 +13,6 @@ import {
 } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { AllocationSection } from "./allocation-section";
 import { TaxSettingsForm } from "./tax-settings-form";
 import { SlabsTable } from "./slabs-table";
@@ -69,11 +67,6 @@ export default async function FinanceSettingsPage({
       <PageHeader
         title="Settings"
         description="Every editable number Finance uses: allocation targets, tax reference rates, and insight thresholds — none of it hardcoded."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <Card className="mb-6">

@@ -15,7 +15,13 @@ import {
   recordCashFlow,
   refreshMutualFundNav,
   signedAmountMinor,
+  correctCashFlow,
+  getCashFlow,
+  getCashFlowCorrectionTrail,
+  voidCashFlow,
 } from "./investments";
+import { listCashFlowsForHolding } from "../../db/queries/domain/investments";
+import { todayIso } from "@/lib/dates";
 import { toPriceScaled, toRateBps, toUnitsScaled } from "../utility/units";
 import { createGoal } from "./goals";
 
@@ -714,5 +720,190 @@ describe("investments service", () => {
         "This holding has no AMFI scheme code set",
       );
     });
+  });
+});
+
+describe("cash flow void and correct", () => {
+  /** A unit-priced holding, one contribution, one price — enough for an XIRR. */
+  function seedFund(name: string, contributionMinor: number) {
+    const holding = createHolding({ type: "equity", name, unitsScaled: null });
+    recordCashFlow({
+      holdingId: holding.id,
+      date: "2026-01-01",
+      flowType: "contribution",
+      amountMinor: contributionMinor,
+      unitsScaled: toUnitsScaled(100),
+    });
+    createValuation({
+      holdingId: holding.id,
+      date: "2026-06-01",
+      priceScaled: toPriceScaled(1500),
+      priceCurrency: "INR",
+      source: "user",
+      method: "manual",
+      confidence: "reported",
+      asOf: "2026-06-01",
+    });
+    return holding;
+  }
+
+  it("voids a flow, keeps it readable with its reason, and drops it from the ledger", () => {
+    const holding = seedFund("Fund A", 100000);
+    const [flow] = getCashFlowsForHolding(holding.id);
+
+    const voided = voidCashFlow(flow.id, "  Logged against the wrong fund  ");
+    expect(voided.voidedAt).toBe(todayIso());
+    expect(voided.voidReason).toBe("Logged against the wrong fund");
+    expect(voided.supersededById).toBeNull();
+
+    expect(getCashFlowsForHolding(holding.id)).toEqual([]);
+    const trail = listCashFlowsForHolding(holding.id, undefined, { includeVoided: true });
+    expect(trail).toHaveLength(1);
+    expect(trail[0]).toMatchObject({ id: flow.id, voidReason: "Logged against the wrong fund" });
+    // No units left, so the holding reports unknown rather than a stale value.
+    expect(getHoldingValue(holding).missing).toBe("units");
+  });
+
+  it("refuses a void with no reason, a missing flow, and a second void", () => {
+    const holding = seedFund("Fund A", 100000);
+    const [flow] = getCashFlowsForHolding(holding.id);
+
+    expect(() => voidCashFlow(flow.id, "  ")).toThrow("Say why");
+    expect(() => voidCashFlow(flow.id + 999, "gone")).toThrow("no longer exists");
+
+    voidCashFlow(flow.id, "Duplicate");
+    expect(() => voidCashFlow(flow.id, "Duplicate again")).toThrow("already been reversed");
+    expect(getCashFlow(flow.id)?.voidReason).toBe("Duplicate");
+  });
+
+  it("reports the same XIRR after a correction as if the right amount had been entered first", () => {
+    const corrected = seedFund("A Mistyped", 1000000); // 10,000 typed instead of 1,000
+    seedFund("B Clean", 100000);
+    const [wrongFlow] = getCashFlowsForHolding(corrected.id);
+
+    const result = correctCashFlow(
+      wrongFlow.id,
+      {
+        holdingId: corrected.id,
+        date: "2026-01-01",
+        flowType: "contribution",
+        amountMinor: 100000,
+        unitsScaled: toUnitsScaled(100),
+      },
+      "Amount typed with an extra zero",
+    );
+
+    // This is the whole reason void-and-replace is worth the extra rows: the
+    // void and its replacement net out, so the reported return is the return
+    // of the corrected history, not an average of the two entries.
+    const byName = new Map(getHoldingsWithValue().map((h) => [h.name, h]));
+    expect(byName.get("A Mistyped")!.xirr).toBe(byName.get("B Clean")!.xirr);
+    expect(byName.get("A Mistyped")!.xirr).not.toBeNull();
+    expect(byName.get("A Mistyped")!.currentValueMinor).toBe(
+      byName.get("B Clean")!.currentValueMinor,
+    );
+    // Same for the portfolio rate: it is one solve over every live flow, so a
+    // voided flow left in would move it too.
+    expect(getPortfolioXirrByCurrency().get("INR")).toBe(byName.get("B Clean")!.xirr);
+
+    // Signs still come from the flow type on the replacement, not from input.
+    expect(result.replacement.amountMinor).toBe(-100000);
+    expect(result.voided.supersededById).toBe(result.replacement.id);
+    const trail = getCashFlowCorrectionTrail(wrongFlow.id);
+    expect(trail?.row.voidReason).toBe("Amount typed with an extra zero");
+    expect(trail?.replacement?.id).toBe(result.replacement.id);
+    expect(getCashFlowCorrectionTrail(result.replacement.id)?.replacement).toBeNull();
+  });
+
+  it("lets a correction re-use the units the voided flow had claimed", () => {
+    const holding = seedFund("Fund A", 100000);
+    recordCashFlow({
+      holdingId: holding.id,
+      date: "2026-03-01",
+      flowType: "redemption",
+      amountMinor: 160000,
+      unitsScaled: toUnitsScaled(100),
+    });
+    const [redemption] = getCashFlowsForHolding(holding.id);
+    expect(redemption.flowType).toBe("redemption");
+
+    // Nothing is held any more, so a fresh sell of the same units is refused.
+    expect(() =>
+      recordCashFlow({
+        holdingId: holding.id,
+        date: "2026-03-01",
+        flowType: "redemption",
+        amountMinor: 160000,
+        unitsScaled: toUnitsScaled(100),
+      }),
+    ).toThrow("units were held");
+
+    // Correcting it is not: the void lands first inside the same DB
+    // transaction, so the units check sees the corrected world. A check run
+    // before the void would reject every sell correction outright.
+    const { replacement } = correctCashFlow(
+      redemption.id,
+      {
+        holdingId: holding.id,
+        date: "2026-03-01",
+        flowType: "redemption",
+        amountMinor: 150000,
+        unitsScaled: toUnitsScaled(100),
+      },
+      "Proceeds were 1,500",
+    );
+    expect(replacement.amountMinor).toBe(150000);
+    expect(getCashFlowsForHolding(holding.id)).toHaveLength(2);
+  });
+
+  it("rolls the void back when the replacement is refused", () => {
+    const holding = seedFund("Fund A", 100000);
+    const [flow] = getCashFlowsForHolding(holding.id);
+
+    // An equity buy without units is refused for a correction exactly as for a
+    // fresh entry — a correction is not a side door past the rules.
+    expect(() =>
+      correctCashFlow(
+        flow.id,
+        {
+          holdingId: holding.id,
+          date: "2026-01-01",
+          flowType: "contribution",
+          amountMinor: 90000,
+        },
+        "Wrong amount",
+      ),
+    ).toThrow("how many units");
+
+    // A voided flow with no replacement would be a reversal nobody asked for.
+    expect(getCashFlow(flow.id)?.voidedAt).toBeNull();
+    expect(getCashFlowsForHolding(holding.id)).toHaveLength(1);
+  });
+
+  it("refuses to fork the chain or correct an already-voided flow", () => {
+    const holding = seedFund("Fund A", 100000);
+    const [flow] = getCashFlowsForHolding(holding.id);
+    const replacementInput = {
+      holdingId: holding.id,
+      date: "2026-01-01",
+      flowType: "contribution" as const,
+      amountMinor: 90000,
+      unitsScaled: toUnitsScaled(100),
+    };
+
+    expect(() => correctCashFlow(flow.id, replacementInput, " ")).toThrow("Say why");
+    expect(() => correctCashFlow(flow.id + 999, replacementInput, "gone")).toThrow(
+      "no longer exists",
+    );
+
+    const { replacement } = correctCashFlow(flow.id, replacementInput, "Wrong amount");
+    expect(() => correctCashFlow(flow.id, replacementInput, "again")).toThrow(
+      "already been corrected",
+    );
+
+    voidCashFlow(replacement.id, "Never happened");
+    expect(() => correctCashFlow(replacement.id, replacementInput, "too late")).toThrow(
+      "nothing to correct",
+    );
   });
 });

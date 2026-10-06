@@ -4,6 +4,7 @@ import { budgets } from "../../schema/domain/budgets";
 import { categories } from "../../schema/domain/categories";
 import { transactions } from "../../schema/domain/transactions";
 import { live } from "../lifecycle";
+import type { Currency } from "../../schema/currency";
 
 export type NewBudget = typeof budgets.$inferInsert;
 
@@ -27,14 +28,12 @@ export function upsertBudget(entry: NewBudget) {
 
 /**
  * One row per category with a budget effective on/before the month of
- * `monthStart` — its most recently set `monthly_limit`, paired with actual
- * expense spend for that category in [monthStart, monthEnd). Compared at
- * month granularity (not exact date) so a budget added on any day of a month
- * counts as effective for that whole month, including one set for the
- * current month after the 1st. Actual spend is always computed fresh from
- * transactions, never stored. See docs/prd/finance/budgets.md.
+ * `monthStart` — its most recently set limit. Compared at month granularity
+ * (not exact date) so a budget added on any day of a month counts as effective
+ * for that whole month, including one set for the current month after the 1st.
+ * See docs/prd/finance/budgets.md.
  */
-export function listBudgetsForMonth(monthStart: string, monthEnd: string) {
+export function listBudgetsForMonth(monthStart: string) {
   const db = getDb();
   const monthPrefix = monthStart.slice(0, 7);
 
@@ -48,23 +47,6 @@ export function listBudgetsForMonth(monthStart: string, monthEnd: string) {
     .groupBy(budgets.categoryId)
     .as("latest");
 
-  const spend = db
-    .select({
-      categoryId: transactions.categoryId,
-      total: sql<number>`SUM(${transactions.amountMinor})`.as("total"),
-    })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.type, "expense"),
-        gte(transactions.date, monthStart),
-        lt(transactions.date, monthEnd),
-        live(transactions.voidedAt),
-      ),
-    )
-    .groupBy(transactions.categoryId)
-    .as("spend");
-
   return db
     .select({
       categoryId: categories.id,
@@ -72,9 +54,6 @@ export function listBudgetsForMonth(monthStart: string, monthEnd: string) {
       monthlyLimitMinor: budgets.monthlyLimitMinor,
       currency: budgets.currency,
       effectiveFrom: budgets.effectiveFrom,
-      /** Minor units, exactly as summed — see decision 8: money is never
-       * converted in SQL, so this is the budget currency's own total. */
-      actualSpendMinor: sql<number>`COALESCE(${spend.total}, 0)`.mapWith(Number),
     })
     .from(latest)
     .innerJoin(categories, eq(categories.id, latest.categoryId))
@@ -85,7 +64,49 @@ export function listBudgetsForMonth(monthStart: string, monthEnd: string) {
         eq(budgets.effectiveFrom, latest.maxEffectiveFrom),
       ),
     )
-    .leftJoin(spend, eq(spend.categoryId, categories.id))
     .orderBy(categories.name)
     .all();
+}
+
+/**
+ * Expense spend in [monthStart, monthEnd), per category **and per currency**.
+ *
+ * Split by currency, not collapsed into one number: a category can be spent in
+ * more than one currency, and adding those together is the cross-currency sum
+ * the currency column exists to prevent. It was collapsed here until an
+ * architecture-test rule caught it. The caller converts into the *budget's*
+ * currency — see `getBudgetSpend`, and decision 8.
+ *
+ * Actual spend is always computed fresh from transactions, never stored.
+ */
+export function spendByCategoryAndCurrency(
+  monthStart: string,
+  monthEnd: string,
+): Map<number, Map<Currency, number>> {
+  const rows = getDb()
+    .select({
+      categoryId: transactions.categoryId,
+      currency: transactions.currency,
+      totalMinor: sql<number>`SUM(${transactions.amountMinor})`.mapWith(Number),
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.type, "expense"),
+        gte(transactions.date, monthStart),
+        lt(transactions.date, monthEnd),
+        live(transactions.voidedAt),
+      ),
+    )
+    .groupBy(transactions.categoryId, transactions.currency)
+    .all();
+
+  const byCategory = new Map<number, Map<Currency, number>>();
+  for (const row of rows) {
+    if (row.categoryId === null) continue;
+    const bucket = byCategory.get(row.categoryId) ?? new Map<Currency, number>();
+    bucket.set(row.currency, (bucket.get(row.currency) ?? 0) + row.totalMinor);
+    byCategory.set(row.categoryId, bucket);
+  }
+  return byCategory;
 }

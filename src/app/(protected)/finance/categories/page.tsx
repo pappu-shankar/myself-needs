@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { getCategories } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
-import { Button } from "@/components/ui/button";
 import { AddCategoryDialog } from "./add-category-dialog";
 
 export const metadata: Metadata = {
@@ -19,11 +17,6 @@ export default async function CategoriesPage() {
       <PageHeader
         title="Categories"
         description="Income and expense categories used to classify transactions."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="mb-4 flex items-center justify-between gap-4">

@@ -50,9 +50,20 @@ export const transactions = sqliteTable(
     index("finance_transactions_account_date_idx").on(table.accountId, table.date),
     index("finance_transactions_category_date_idx").on(table.categoryId, table.date),
     index("finance_transactions_recurring_rule_idx").on(table.recurringRuleId),
+    /**
+     * One live confirmation per rule per period: confirming the same period
+     * twice (double submit, two tabs) can't double-post.
+     *
+     * `voided_at IS NULL` is part of the predicate, so a *voided* confirmation
+     * stops occupying the slot. Without that clause a correction is impossible:
+     * the replacement collides with the very row it replaces, and the user can
+     * neither re-confirm the period nor see it return to the due worklist.
+     */
     uniqueIndex("finance_transactions_rule_period_idx")
       .on(table.recurringRuleId, table.periodStart)
-      .where(sql`${table.recurringRuleId} IS NOT NULL AND ${table.periodStart} IS NOT NULL`),
+      .where(
+        sql`${table.recurringRuleId} IS NOT NULL AND ${table.periodStart} IS NOT NULL AND ${table.voidedAt} IS NULL`,
+      ),
     index("finance_transactions_to_account_date_idx").on(table.toAccountId, table.date),
     index("finance_transactions_date_idx").on(table.date),
   ],

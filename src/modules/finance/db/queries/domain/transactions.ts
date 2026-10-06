@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/modules/core/db/client";
 import { transactions } from "../../schema/domain/transactions";
@@ -188,4 +188,47 @@ export function listRecentTransactions(limit = 5) {
 
 export function insertTransaction(entry: NewTransaction) {
   return getDb().insert(transactions).values(entry).returning().get();
+}
+
+/**
+ * One row by id with **no** lifecycle filter. Every other reader here hides
+ * voided rows by default; this one must not, because both callers that need it
+ * — voiding a row, and showing the correction trail — are specifically asking
+ * about a row that may already be reversed.
+ *
+ * It is scoped to the caller's vault by `getDb()` alone, which is what makes a
+ * correction pointing at another vault's row impossible rather than merely
+ * checked: the id simply isn't found here.
+ */
+export function getTransactionRowById(id: number) {
+  return getDb().select().from(transactions).where(eq(transactions.id, id)).get();
+}
+
+/**
+ * Stamps the void. `live(voidedAt)` is part of the WHERE rather than a prior
+ * read, so two concurrent voids cannot both stamp one row and the second gets
+ * `undefined` back instead of overwriting the first reason.
+ */
+export function markTransactionVoided(id: number, voidedAt: string, reason: string) {
+  return getDb()
+    .update(transactions)
+    .set({ voidedAt, voidReason: reason, updatedAt: sql`(current_timestamp)` })
+    .where(and(eq(transactions.id, id), live(transactions.voidedAt)))
+    .returning()
+    .get();
+}
+
+/**
+ * Points a voided row forward at its replacement. `superseded_by_id` lives on
+ * the voided row, not the new one, so history reads from the mistake to the
+ * fix. `isNull(supersededById)` guards the chain: a row already corrected
+ * cannot be re-pointed at a second replacement, which would fork it.
+ */
+export function setTransactionSupersededBy(id: number, replacementId: number) {
+  return getDb()
+    .update(transactions)
+    .set({ supersededById: replacementId, updatedAt: sql`(current_timestamp)` })
+    .where(and(eq(transactions.id, id), isNull(transactions.supersededById)))
+    .returning()
+    .get();
 }

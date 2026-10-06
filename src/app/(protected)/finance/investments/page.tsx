@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { getHoldingsWithValue, getPortfolioXirrByCurrency } from "@/modules/finance";
 import { formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { NavCard } from "@/components/ui/nav-card";
 
 export const metadata: Metadata = {
@@ -40,11 +38,6 @@ export default async function InvestmentsPage() {
       <PageHeader
         title="Investments"
         description="Holdings, cash flows, valuations, and government scheme templates."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">

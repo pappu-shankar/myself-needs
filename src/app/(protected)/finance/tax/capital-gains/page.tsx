@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { currentFiscalYear, getCapitalGainsEstimate } from "@/modules/finance";
 import { STATUTORY_CURRENCY } from "@/modules/finance/service/config/tax";
 import { Money } from "../../_components/money";
@@ -15,7 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { FiscalYearPicker } from "../fiscal-year-picker";
 import { PolicyNote } from "../policy-note";
 import { fiscalYearOptions, selectedFiscalYear } from "../selected-fiscal-year";
@@ -38,11 +36,6 @@ export default async function CapitalGainsPage({
       <PageHeader
         title="Capital gains"
         description={`FIFO-matched capital gains estimate for redemptions in FY ${fy.label} (${fy.start} to ${fy.end}).`}
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance/tax" />}>
-            Back to Tax planning
-          </Button>
-        }
       />
 
       <FiscalYearPicker

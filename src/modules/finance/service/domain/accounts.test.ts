@@ -1,16 +1,23 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { sql } from "drizzle-orm";
+import { getDb } from "@/modules/core/db/client";
 import {
+  archiveAccountById,
   createAccount,
+  deleteAccountById,
+  editAccount,
   getAccount,
   getAccountBalanceMinorById,
   getAccountTerms,
   getAccounts,
   getNetWorth,
   getNetWorthByCurrency,
+  unarchiveAccountById,
 } from "./accounts";
 import { createTransaction } from "./transactions";
 import { createCategory } from "./categories";
+import { createRecurringRule } from "./recurring";
 
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
@@ -309,5 +316,277 @@ describe("accounts service", () => {
       openingBalanceMinor: 10_000,
     });
     expect(getAccount(created.id + 999)).toBeNull();
+  });
+});
+
+describe("editAccount", () => {
+  it("edits descriptive fields in place rather than producing a second account", () => {
+    const account = createAccount({ name: "Chekcing", type: "checking" });
+
+    const edited = editAccount(account.id, { name: "Checking" });
+
+    expect(edited.id).toBe(account.id);
+    expect(edited.name).toBe("Checking");
+    expect(getAccounts()).toHaveLength(1);
+  });
+
+  it("throws when the account is missing", () => {
+    expect(() => editAccount(999, { name: "Nope" })).toThrow(/no longer exists/);
+  });
+
+  it("recomputes kind and normal balance when the type changes, so the DB CHECK can't be hit", () => {
+    const account = createAccount({ name: "Wallet", type: "cash" });
+
+    const edited = editAccount(account.id, { type: "credit_card" });
+
+    expect(edited.kind).toBe("liability");
+    expect(edited.normalBalance).toBe("credit");
+    expect(edited.liquidity).toBe("liquid");
+  });
+
+  it("recomputes liquidity on a type change so a loan re-typed as savings stops reading as cash", () => {
+    const account = createAccount({ name: "Brokerage", type: "investment" });
+    expect(account.liquidity).toBe("semi_liquid");
+
+    expect(editAccount(account.id, { type: "savings" }).liquidity).toBe("liquid");
+  });
+
+  it("re-applies the kind/normal-balance agreement rule as a user-facing error", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+
+    expect(() => editAccount(account.id, { kind: "liability", normalBalance: "debit" })).toThrow(
+      /kind and normal balance must agree/,
+    );
+  });
+
+  it("re-signs the opening balance when the kind flips on an account with no history", () => {
+    const account = createAccount({
+      name: "Checking",
+      type: "checking",
+      openingBalanceMinor: 5000,
+    });
+
+    expect(editAccount(account.id, { type: "credit_card" }).openingBalanceMinor).toBe(-5000);
+  });
+
+  it("negates a new opening balance for a liability, exactly as create does", () => {
+    const card = createAccount({ name: "Card", type: "credit_card", openingBalanceMinor: 1000 });
+
+    expect(editAccount(card.id, { openingBalanceMinor: 2500 }).openingBalanceMinor).toBe(-2500);
+  });
+
+  it("re-applies the whole-minor-units rule to an edited opening balance", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+
+    expect(() => editAccount(account.id, { openingBalanceMinor: 100.5 })).toThrow(
+      /whole number of minor units/,
+    );
+  });
+
+  it("re-applies the terms-satellite type rule", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+
+    expect(() => editAccount(account.id, { loanTerms: { rateBps: 800 } })).toThrow(
+      /Only a loan account takes loan terms/,
+    );
+  });
+
+  it("replaces the terms satellite and pins it to the account's currency", () => {
+    const loan = createAccount({ name: "Home Loan", type: "loan", currency: "INR" });
+
+    editAccount(loan.id, { loanTerms: { rateBps: 865, emiMinor: 4_500_000 } });
+
+    expect(getAccountTerms(loan.id).loan).toMatchObject({
+      rateBps: 865,
+      emiMinor: 4_500_000,
+      currency: "INR",
+    });
+  });
+
+  it("allows a currency change while the account has no transactions", () => {
+    const account = createAccount({ name: "Checking", type: "checking", currency: "INR" });
+
+    expect(editAccount(account.id, { currency: "USD" }).currency).toBe("USD");
+  });
+
+  it("refuses a currency change once the account has any transaction", () => {
+    const account = createAccount({
+      name: "Checking",
+      type: "checking",
+      currency: "INR",
+      openingBalanceMinor: 100_000,
+    });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 25_000,
+      date: "2026-03-01",
+    });
+
+    expect(() => editAccount(account.id, { currency: "USD" })).toThrow(/currency can't be changed/);
+    expect(getAccount(account.id)!.currency).toBe("INR");
+  });
+
+  it("refuses an asset↔liability type change once the account has any transaction", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 25_000,
+      date: "2026-03-01",
+    });
+
+    expect(() => editAccount(account.id, { type: "credit_card" })).toThrow(
+      /between an asset and a liability/,
+    );
+    // A type change that keeps the kind is still fine.
+    expect(editAccount(account.id, { type: "savings" }).type).toBe("savings");
+  });
+});
+
+describe("archiveAccountById", () => {
+  it("hides the account from listings without moving any balance or net-worth figure", () => {
+    const checking = createAccount({
+      name: "Checking",
+      type: "checking",
+      currency: "INR",
+      openingBalanceMinor: 100_000,
+    });
+    const savings = createAccount({
+      name: "Savings",
+      type: "savings",
+      currency: "INR",
+      openingBalanceMinor: 500_000,
+    });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    createTransaction({
+      type: "expense",
+      accountId: checking.id,
+      categoryId: category.id,
+      amountMinor: 25_000,
+      date: "2026-03-01",
+    });
+
+    const savingsBalanceBefore = getAccountBalanceMinorById(savings.id);
+    const checkingBalanceBefore = getAccountBalanceMinorById(checking.id);
+    const netWorthBefore = getNetWorthByCurrency().get("INR");
+
+    archiveAccountById(checking.id);
+
+    // The archived account leaves the picker/listing...
+    expect(getAccounts().map((a) => a.id)).toEqual([savings.id]);
+    // ...and no figure was restated. Its own balance still computes from the
+    // same transactions, and the account that remains is untouched: archiving
+    // is a visibility change, not an edit to history.
+    expect(getAccountBalanceMinorById(checking.id)).toBe(checkingBalanceBefore);
+    expect(getAccountBalanceMinorById(savings.id)).toBe(savingsBalanceBefore);
+    // And net worth does not move at all. Archiving is a visibility change, so
+    // retiring a row the user was finished *looking at* must not appear to
+    // destroy the money in it — `exclude_from_net_worth` is the explicit,
+    // opt-in way to leave something out of the total.
+    expect(getNetWorthByCurrency().get("INR")).toBe(netWorthBefore);
+    expect(getNetWorthByCurrency().get("INR")).toBe(checkingBalanceBefore + savingsBalanceBefore);
+  });
+
+  it("round-trips through unarchive", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+
+    expect(archiveAccountById(account.id).archivedAt).not.toBeNull();
+    expect(getAccounts()).toHaveLength(0);
+
+    expect(unarchiveAccountById(account.id).archivedAt).toBeNull();
+    expect(getAccounts()).toHaveLength(1);
+  });
+
+  it("throws when the account is missing", () => {
+    expect(() => archiveAccountById(999)).toThrow(/no longer exists/);
+    expect(() => unarchiveAccountById(999)).toThrow(/no longer exists/);
+  });
+});
+
+describe("deleteAccountById", () => {
+  it("deletes an account nothing references, along with its terms satellite", () => {
+    const loan = createAccount({
+      name: "Car Loan",
+      type: "loan",
+      loanTerms: { rateBps: 900 },
+    });
+
+    deleteAccountById(loan.id);
+
+    expect(getAccount(loan.id)).toBeNull();
+    expect(getAccountTerms(loan.id).loan).toBeNull();
+  });
+
+  it("refuses to delete an account with a transaction, and names archiving instead", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 25_000,
+      date: "2026-03-01",
+    });
+
+    expect(() => deleteAccountById(account.id)).toThrow(/Archive it instead/);
+    expect(getAccount(account.id)).not.toBeNull();
+  });
+
+  it("refuses to delete the destination account of a transfer", () => {
+    const from = createAccount({ name: "Checking", type: "checking" });
+    const to = createAccount({ name: "Savings", type: "savings" });
+    createTransaction({
+      type: "transfer",
+      accountId: from.id,
+      toAccountId: to.id,
+      amountMinor: 50_000,
+      date: "2026-03-01",
+    });
+
+    expect(() => deleteAccountById(to.id)).toThrow(/can't be deleted/);
+  });
+
+  it("refuses to delete an account a voided transaction still references", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const transaction = createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 25_000,
+      date: "2026-03-01",
+    });
+    getDb().run(
+      sql`UPDATE finance_transactions SET voided_at = '2026-03-02', void_reason = 'typo' WHERE id = ${transaction.id}`,
+    );
+
+    // A void is a correction trail, not a deletion: the row still names this
+    // account, so deleting it would leave the trail pointing at nothing.
+    expect(() => deleteAccountById(account.id)).toThrow(/can't be deleted/);
+  });
+
+  it("refuses to delete an account a recurring rule references", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amountMinor: 100_000,
+      currency: "INR",
+      frequency: "monthly",
+      startDate: "2026-01-01",
+    });
+
+    expect(() => deleteAccountById(account.id)).toThrow(/can't be deleted/);
+  });
+
+  it("throws when the account is missing", () => {
+    expect(() => deleteAccountById(999)).toThrow(/no longer exists/);
   });
 });

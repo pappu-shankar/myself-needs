@@ -12,7 +12,7 @@ import {
   listTransactionsByCursor,
   listRecentTransactions,
 } from "./domain/transactions";
-import { listBudgetsForMonth } from "./domain/budgets";
+import { spendByCategoryAndCurrency } from "./domain/budgets";
 import { getMonthlyIncomeExpense, getExpenseByCategory } from "./domain/reports";
 import {
   get80cHoldingContributionsByCurrency,
@@ -96,7 +96,7 @@ describe("void is honoured by every money query", () => {
     ).toBe(5000000);
     expect(getMonthlyIncomeExpense("2026-01-01", "2026-12-31")).not.toEqual([]);
     expect(getExpenseByCategory("2026-01-01", "2026-12-31")).not.toEqual([]);
-    expect(listBudgetsForMonth("2026-03-01", "2026-04-01")[0].actualSpendMinor).toBe(5000000);
+    expect(spendByCategoryAndCurrency("2026-03-01", "2026-04-01").get(1)?.get("INR")).toBe(5000000);
   });
 
   it("returns zero from every money query once every row is voided", () => {
@@ -117,7 +117,9 @@ describe("void is honoured by every money query", () => {
     expect(listTransactionsByCursor({}).rows).toEqual([]);
     expect(listRecentTransactions()).toEqual([]);
 
-    expect(listBudgetsForMonth("2026-03-01", "2026-04-01")[0].actualSpendMinor).toBe(0);
+    // Spend is per category per currency now; a voided expense leaves the
+    // category with no row at all rather than a zero.
+    expect(spendByCategoryAndCurrency("2026-03-01", "2026-04-01").size).toBe(0);
     expect(getMonthlyIncomeExpense("2026-01-01", "2026-12-31")).toEqual([]);
     expect(getExpenseByCategory("2026-01-01", "2026-12-31")).toEqual([]);
 

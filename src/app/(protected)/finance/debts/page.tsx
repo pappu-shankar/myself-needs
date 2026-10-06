@@ -15,7 +15,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { LoanAmortization } from "./loan-amortization";
 
 export const metadata: Metadata = {
@@ -88,11 +87,6 @@ export default async function DebtsPage() {
       <PageHeader
         title="Debts"
         description="Credit cards and loans — filtered from your accounts."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <Card className="mb-6">

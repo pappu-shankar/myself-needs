@@ -1,4 +1,9 @@
-import { upsertBudget, listBudgetsForMonth, type NewBudget } from "../../db/queries/domain/budgets";
+import {
+  upsertBudget,
+  listBudgetsForMonth,
+  spendByCategoryAndCurrency,
+  type NewBudget,
+} from "../../db/queries/domain/budgets";
 import type { Currency } from "../../db/schema/currency";
 import { aggregateToBase, type MoneyAggregate } from "../utility/aggregate";
 import { resolveConversionBasis, type BaseConversionOptions } from "./accounts";
@@ -10,13 +15,36 @@ import { DomainError } from "@/modules/core/errors";
  * same category — see `upsertBudget`. */
 export function createBudget(entry: NewBudget) {
   if (!Number.isInteger(entry.monthlyLimitMinor) || entry.monthlyLimitMinor < 0) {
-    throw new DomainError("A budget limit must be a whole number of minor units, and not negative.");
+    throw new DomainError(
+      "A budget limit must be a whole number of minor units, and not negative.",
+    );
   }
   return upsertBudget(entry);
 }
 
+export interface BudgetForMonth {
+  categoryId: number;
+  categoryName: string;
+  monthlyLimitMinor: number;
+  currency: Currency;
+  effectiveFrom: string;
+  /**
+   * Spend converted into the budget's own currency, carrying the rate used.
+   * `complete: false` means some spend could not be converted, so the
+   * comparison is understated — which the view must say rather than letting a
+   * budget look comfortably under its limit.
+   */
+  spend: MoneyAggregate;
+  /** True once spend exceeds the limit. Null when the spend figure is
+   * incomplete: "over budget" is a claim that needs the whole number. */
+  overBudget: boolean | null;
+}
+
 /** `month` as "YYYY-MM"; defaults to the current month. */
-export function getBudgetsForMonth(month?: string) {
+export function getBudgetsForMonth(
+  month?: string,
+  options: Omit<BaseConversionOptions, "baseCurrency"> = {},
+): BudgetForMonth[] {
   const monthStart = month ? `${month}-01` : `${todayIso().slice(0, 7)}-01`;
   const [year, monthNum] = monthStart.split("-").map(Number);
   // monthNum is 1-indexed (e.g. 8 for August); Date.UTC's month param is
@@ -25,7 +53,20 @@ export function getBudgetsForMonth(month?: string) {
   // for free by Date's normalization (month 12 in December becomes January).
   const monthEnd = new Date(Date.UTC(year, monthNum, 1)).toISOString().slice(0, 10);
 
-  return listBudgetsForMonth(monthStart, monthEnd);
+  const spendByCategory = spendByCategoryAndCurrency(monthStart, monthEnd);
+
+  return listBudgetsForMonth(monthStart).map((budget) => {
+    const spend = getBudgetSpend(
+      spendByCategory.get(budget.categoryId) ?? new Map(),
+      budget.currency,
+      options,
+    );
+    return {
+      ...budget,
+      spend,
+      overBudget: spend.complete ? spend.baseMinor > budget.monthlyLimitMinor : null,
+    };
+  });
 }
 
 /**

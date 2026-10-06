@@ -13,11 +13,14 @@ import {
   zPositiveNumber,
   zText,
 } from "@/lib/validation";
+import type { CashFlowInputFromUser } from "../../service/domain/investments";
 import {
+  correctCashFlow,
   createHolding,
   createValuation,
   recordCashFlow,
   refreshMutualFundNav,
+  voidCashFlow,
 } from "../../service/domain/investments";
 import { INVESTMENT_TYPES, CASH_FLOW_TYPES, ACCRUAL_TYPES } from "../../types";
 import { toMinor } from "@/lib/format";
@@ -29,6 +32,8 @@ import { getBaseCurrency } from "../../db/queries/config/settings";
 export type AddHoldingState = ActionState;
 export type AddCashFlowState = ActionState;
 export type AddValuationState = ActionState;
+export type VoidCashFlowState = ActionState;
+export type CorrectCashFlowState = ActionState;
 export type RefreshNavState = ActionState;
 
 const holdingSchema = z
@@ -87,28 +92,70 @@ export const addHoldingAction = defineFormAction(
   { name: "finance:add-holding" },
 );
 
+const cashFlowFields = {
+  holdingId: zId,
+  date: zIsoDate,
+  amount: zPositiveAmount,
+  flowType: z.enum(CASH_FLOW_TYPES, { error: "Pick a flow type" }),
+  units: zPositiveNumber.optional(),
+};
+
+/**
+ * Form values to the service's user-level input. The holding's own currency
+ * sets the exponent; the service refuses a flow in any other currency, so
+ * there is nothing to choose here.
+ */
+function toCashFlowInput(input: {
+  holdingId: number;
+  date: string;
+  amount: number;
+  flowType: (typeof CASH_FLOW_TYPES)[number];
+  units?: number;
+}): CashFlowInputFromUser {
+  const currency = getHoldingCurrency(input.holdingId);
+  return {
+    holdingId: input.holdingId,
+    date: input.date,
+    flowType: input.flowType,
+    amountMinor: toMinor(input.amount, currency),
+    unitsScaled: input.units === undefined ? undefined : toUnitsScaled(input.units),
+  };
+}
+
 /** Amount and units are entered as positive numbers; the service derives signs from the flow type. */
 export const addCashFlowAction = defineFormAction(
-  z.object({
-    holdingId: zId,
-    date: zIsoDate,
-    amount: zPositiveAmount,
-    flowType: z.enum(CASH_FLOW_TYPES, { error: "Pick a flow type" }),
-    units: zPositiveNumber.optional(),
-  }),
+  z.object(cashFlowFields),
   (input) => {
-    // The holding's own currency sets the exponent; the service refuses a flow
-    // in any other currency, so there is nothing to choose here.
-    const currency = getHoldingCurrency(input.holdingId);
-    recordCashFlow({
-      holdingId: input.holdingId,
-      date: input.date,
-      flowType: input.flowType,
-      amountMinor: toMinor(input.amount, currency),
-      unitsScaled: input.units === undefined ? undefined : toUnitsScaled(input.units),
-    });
+    recordCashFlow(toCashFlowInput(input));
   },
   { name: "finance:add-investment-cash-flow" },
+);
+
+/**
+ * Reverses a cash flow that should never have been recorded. The reason is
+ * required: a reversed flow with no stated reason leaves a hole in a return
+ * series that nobody can account for later.
+ */
+export const voidCashFlowAction = defineFormAction(
+  z.object({ id: zId, reason: zText("A reason") }),
+  (input) => {
+    voidCashFlow(input.id, input.reason);
+  },
+  { name: "finance:void-investment-cash-flow" },
+);
+
+/**
+ * Corrects a cash flow. The submitted values are the *replacement*; the
+ * service voids the original and records this through the same `recordCashFlow`
+ * path a fresh entry takes, so the sign, the currency and the units-held check
+ * all still apply.
+ */
+export const correctCashFlowAction = defineFormAction(
+  z.object({ ...cashFlowFields, id: zId, reason: zText("A reason") }),
+  (input) => {
+    correctCashFlow(input.id, toCashFlowInput(input), input.reason);
+  },
+  { name: "finance:correct-investment-cash-flow" },
 );
 
 export const addValuationAction = defineFormAction(

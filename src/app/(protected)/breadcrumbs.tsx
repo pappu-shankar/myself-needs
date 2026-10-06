@@ -10,8 +10,17 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { FINANCE_SEGMENT_LABELS } from "./finance/ia-config";
 
 /** One entry per route segment across the whole app — not every segment maps 1:1 to a page.tsx (e.g. "finance" is both a segment and a page), but every segment used as a URL path piece needs a label here. Falls back to a title-cased version of the raw segment for anything missed. */
+/**
+ * Labels for path segments that are not finance pages.
+ *
+ * Finance's own page labels come from `finance/ia-config.ts` and are merged in
+ * below, so a finance page's breadcrumb and its nav item cannot disagree — they
+ * are the same string. Only segments that are *not* pages of their own
+ * (`holdings`, `deductions`, a calculator) are listed here.
+ */
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   finance: "Finance",
@@ -19,23 +28,13 @@ const SEGMENT_LABELS: Record<string, string> = {
   mental: "Mental",
   plans: "Plans",
 
-  accounts: "Accounts",
-  categories: "Categories",
-  transactions: "Transactions",
-  budgets: "Budgets",
-  recurring: "Recurring",
-  insurance: "Insurance",
-  debts: "Debts",
-  investments: "Investments",
   holdings: "Holdings",
   "scheme-templates": "Scheme templates",
-  reports: "Reports",
   tax: "Tax planning",
   deductions: "Deductions",
   "regime-comparison": "Regime comparison",
   "capital-gains": "Capital gains",
   settings: "Settings",
-  insights: "Insights",
 
   calculators: "Calculators",
   sip: "SIP calculator",
@@ -82,12 +81,17 @@ const ID_LABELS: Record<string, string> = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function labelFor(segment: string, parent?: string): string {
+function labelFor(segment: string, parent: string | undefined, inFinance: boolean): string {
   if (/^\d+$/.test(segment) || UUID.test(segment)) {
     return (parent && ID_LABELS[parent]) ?? "Details";
   }
+  // The finance labels are consulted only under `/finance`. Looking them up by
+  // bare segment everywhere would let `settings` on the app's own settings page
+  // pick up finance's wording — the map is keyed by segment, not by route.
   return (
-    SEGMENT_LABELS[segment] ?? segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    (inFinance ? FINANCE_SEGMENT_LABELS[segment] : undefined) ??
+    SEGMENT_LABELS[segment] ??
+    segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
 }
 
@@ -98,8 +102,9 @@ export function Breadcrumbs() {
 
   if (segments.length === 0) return null;
 
+  const inFinance = segments[0] === "finance";
   const crumbs = segments.map((segment, i) => ({
-    label: labelFor(segment, segments[i - 1]),
+    label: labelFor(segment, segments[i - 1], inFinance),
     href: "/" + segments.slice(0, i + 1).join("/"),
   }));
 

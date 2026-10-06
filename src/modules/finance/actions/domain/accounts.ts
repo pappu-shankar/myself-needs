@@ -4,7 +4,16 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { defineFormAction } from "@/modules/core/action/define-action";
 import { toMinor } from "@/lib/format";
-import { createAccount } from "../../service/domain/accounts";
+import { zCheckbox, zId } from "@/lib/validation";
+import { DomainError } from "@/modules/core/errors";
+import {
+  archiveAccountById,
+  createAccount,
+  deleteAccountById,
+  editAccount,
+  getAccount,
+  unarchiveAccountById,
+} from "../../service/domain/accounts";
 import { toRateBps } from "../../service/utility/units";
 import { ACCOUNT_TYPES } from "../../types";
 import { CURRENCIES } from "../../db/schema/currency";
@@ -95,4 +104,104 @@ export const addAccountAction = defineFormAction(
     revalidatePath("/dashboard");
     return {};
   },
+);
+
+/**
+ * Edit / archive / delete.
+ *
+ * Every field is optional: the form only sends what it changed, and the service
+ * re-applies the create-time validation to the merged row. Amounts arrive in
+ * major units and are converted with the account's *own* currency — read from
+ * the account rather than assumed, so a non-2-decimal currency does not become
+ * a silent factor-of-100 error. On a currency change the new currency is the
+ * right exponent for the new opening balance, and the service refuses the
+ * change outright once the account has any transaction.
+ */
+const editAccountSchema = z.object({
+  id: zId,
+  name: z.string().min(1, "Name is required").optional(),
+  type: z.enum(ACCOUNT_TYPES).optional(),
+  currency: z.enum(CURRENCIES).optional(),
+  openingBalance: z.coerce.number().optional(),
+  creditLimit: z.coerce.number().optional(),
+  interestRate: z.coerce.number().optional(),
+  originalAmount: z.coerce.number().optional(),
+  emiAmount: z.coerce.number().optional(),
+  tenureMonths: z.coerce.number().int().optional(),
+  includeInNetWorth: zCheckbox.optional(),
+});
+
+export const editAccountAction = defineFormAction(
+  editAccountSchema,
+  (input) => {
+    const account = getAccount(input.id);
+    if (!account) throw new DomainError("That account no longer exists.");
+
+    const type = input.type ?? account.type;
+    const currency = input.currency ?? account.currency;
+    const minor = (major: number | undefined) =>
+      major === undefined ? undefined : toMinor(major, currency);
+
+    const hasLoanFields =
+      input.originalAmount !== undefined ||
+      input.emiAmount !== undefined ||
+      input.tenureMonths !== undefined ||
+      input.interestRate !== undefined;
+    const hasCreditFields = input.creditLimit !== undefined || input.interestRate !== undefined;
+
+    editAccount(input.id, {
+      name: input.name,
+      type: input.type,
+      currency: input.currency,
+      openingBalanceMinor: minor(input.openingBalance),
+      excludeFromNetWorth:
+        input.includeInNetWorth === undefined
+          ? undefined
+          : type === "receivable" && !input.includeInNetWorth,
+      loanTerms:
+        type === "loan" && hasLoanFields
+          ? {
+              originalAmountMinor: minor(input.originalAmount) ?? null,
+              emiMinor: minor(input.emiAmount) ?? null,
+              tenureMonths: input.tenureMonths ?? null,
+              rateBps: input.interestRate === undefined ? null : toRateBps(input.interestRate),
+            }
+          : undefined,
+      creditTerms:
+        (type === "credit_card" || type === "revolving_credit") && hasCreditFields
+          ? {
+              creditLimitMinor: minor(input.creditLimit) ?? null,
+              aprBps: input.interestRate === undefined ? null : toRateBps(input.interestRate),
+            }
+          : undefined,
+    });
+  },
+  { name: "finance:edit-account" },
+);
+
+export const archiveAccountAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    archiveAccountById(input.id);
+  },
+  { name: "finance:archive-account" },
+);
+
+export const unarchiveAccountAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    unarchiveAccountById(input.id);
+  },
+  { name: "finance:unarchive-account" },
+);
+
+/** Refused by the service when history references the account; the resulting
+ * DomainError message is what the form shows, and it names archiving as the
+ * answer. */
+export const deleteAccountAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    deleteAccountById(input.id);
+  },
+  { name: "finance:delete-account" },
 );

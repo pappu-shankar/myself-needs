@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { defineFormAction } from "@/modules/core/action/define-action";
-import { createCategory } from "../../service/domain/categories";
+import { zId, zText } from "@/lib/validation";
+import {
+  createCategory,
+  deleteCategoryById,
+  editCategory,
+  archiveCategoryById,
+  unarchiveCategoryById,
+} from "../../service/domain/categories";
 import { CATEGORY_TYPES } from "../../types";
 
 const categorySchema = z.object({
@@ -38,4 +45,60 @@ export const addCategoryAction = defineFormAction(
     revalidatePath("/finance/categories");
     return {};
   },
+);
+
+/**
+ * Edit / delete. There is no archive action: `finance_categories` has no
+ * `archived_at` column, so a category history references can only be renamed,
+ * not retired. Noted in the service.
+ */
+export const editCategoryAction = defineFormAction(
+  z.object({
+    id: zId,
+    name: zText("Name").optional(),
+    type: z.enum(CATEGORY_TYPES).optional(),
+    /** Sent as the literal string "none" to clear the parent, since an absent
+     * field means "unchanged" rather than "no parent". */
+    parentCategoryId: z.union([zId, z.literal("none")]).optional(),
+  }),
+  (input) => {
+    editCategory(input.id, {
+      name: input.name,
+      type: input.type,
+      parentCategoryId:
+        input.parentCategoryId === undefined
+          ? undefined
+          : input.parentCategoryId === "none"
+            ? null
+            : input.parentCategoryId,
+    });
+  },
+  { name: "finance:edit-category" },
+);
+
+/** Refused by the service when transactions, budgets, recurring rules or
+ * sub-categories reference it. */
+export const deleteCategoryAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    deleteCategoryById(input.id);
+  },
+  { name: "finance:delete-category" },
+);
+
+/** The answer to a refused delete: retire the category, keep the history. */
+export const archiveCategoryAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    archiveCategoryById(input.id);
+  },
+  { name: "finance:archive-category" },
+);
+
+export const unarchiveCategoryAction = defineFormAction(
+  z.object({ id: zId }),
+  (input) => {
+    unarchiveCategoryById(input.id);
+  },
+  { name: "finance:unarchive-category" },
 );

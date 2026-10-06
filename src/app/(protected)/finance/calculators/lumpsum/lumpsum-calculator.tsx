@@ -5,10 +5,14 @@ import { computeLumpsumFutureValue } from "@/modules/finance/service/utility/ret
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
+import { formatMoney, toMinor } from "@/lib/format";
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/** A calculator works in one currency the user implicitly chose by typing
+ * rupees; it reads no stored money. Stated explicitly so the figure is
+ * still never formatted without a currency beside it. */
+const CURRENCY = "INR";
+const money = (major: number) =>
+  formatMoney({ minor: toMinor(major, CURRENCY), currency: CURRENCY });
 
 export function LumpsumCalculator() {
   const [principal, setPrincipal] = useState(100000);
@@ -57,7 +61,7 @@ export function LumpsumCalculator() {
         </div>
         <div>
           <p className="text-muted-foreground text-sm">Future value</p>
-          <p className="tabular-nums text-xl font-semibold">{formatAmount(futureValue)}</p>
+          <p className="tabular-nums text-xl font-semibold">{money(futureValue)}</p>
         </div>
       </CardContent>
     </Card>

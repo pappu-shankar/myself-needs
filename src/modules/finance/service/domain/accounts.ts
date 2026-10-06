@@ -1,4 +1,8 @@
 import {
+  accountHasReferences,
+  accountHasTransactions,
+  archiveAccount,
+  deleteAccount,
   getAccountByIdRow,
   getAccountBalanceMinor,
   getAccountsTotalByCurrency,
@@ -7,6 +11,7 @@ import {
   insertAccount,
   listAccounts,
   listAccountsWithBalances,
+  updateAccount,
   upsertCreditTerms,
   upsertLoanTerms,
   type NewAccount,
@@ -82,9 +87,18 @@ export function getAccountTerms(id: number) {
  * Deliberately not one number: adding a dollar balance to a rupee one is the
  * bug the currency column exists to prevent. `getNetWorth` below converts
  * these, and states the rates it used.
+ *
+ * **Archived accounts are included.** Archiving is a UI affordance — it takes an
+ * account out of pickers and listings — and it must not restate anybody's
+ * accounts. Excluding them here would drop an archived account's balance out of
+ * net worth, so retiring a row the user was finished *looking at* would appear
+ * to destroy money. An account that is genuinely closed has a zero balance and
+ * contributes nothing either way; one that does not is still money the user
+ * holds. `exclude_from_net_worth` remains the explicit, opt-in way to leave
+ * something out.
  */
 export function getNetWorthByCurrency(asOfDate?: string): Map<Currency, number> {
-  const included = listAccounts()
+  const included = listAccounts({ includeArchived: true })
     .filter((a) => !a.excludeFromNetWorth)
     .map((a) => a.id);
   return getAccountsTotalByCurrency(included, asOfDate);
@@ -217,4 +231,160 @@ export function getAccountCurrency(accountId: number): Currency {
  */
 export function getDebtTermsByAccount() {
   return listAccountTerms();
+}
+
+/* ── Edit in place, archive, delete (decision 17) ────────────────────────────
+ * An account is a descriptive row, so a correction edits it rather than
+ * producing a second account; retiring it sets `archived_at`; and a hard delete
+ * is only allowed when nothing references it. */
+
+export interface EditAccountInput extends Partial<Omit<NewAccount, "id" | "createdAt">> {
+  /** Replaces the loan satellite wholesale, same shape as on create. */
+  loanTerms?: Omit<NewLoanTerms, "accountId" | "currency">;
+  creditTerms?: Omit<NewCreditTerms, "accountId" | "currency">;
+}
+
+/**
+ * Edits an account in place, re-applying every rule `createAccount` applies, so
+ * an edit can never leave a row a create would have rejected.
+ *
+ * Two changes are refused outright once the account has history, because both
+ * would silently reinterpret amounts already recorded against it rather than
+ * describe them differently:
+ *
+ *  - **Currency.** It is pinned at the account precisely so every leg on it
+ *    shares it (decision 6) and a balance is one exact integer sum. Changing it
+ *    re-denominates every historical amount on the account without touching a
+ *    single stored number — ₹1,00,000 of savings would read as $1,00,000.
+ *  - **A type change that flips asset↔liability.** The sign convention is baked
+ *    into each stored row (a liability's balance is negative), so flipping
+ *    `kind` would invert the meaning of history with no safe inverse — see the
+ *    comment on `normal_balance` in the schema.
+ *
+ * Both are offered an alternative that keeps history intact: archive this
+ * account and create the replacement.
+ */
+export function editAccount(id: number, patch: EditAccountInput) {
+  const existing = getAccountByIdRow(id);
+  if (!existing) throw new DomainError("That account no longer exists.");
+
+  const { loanTerms: loan, creditTerms: credit, ...accountPatch } = patch;
+  const type = accountPatch.type ?? existing.type;
+  const isLiability = LIABILITY_TYPES.has(type);
+  const typeChanged = type !== existing.type;
+  const kindFlips = isLiability !== (existing.kind === "liability");
+  const hasHistory = accountHasTransactions(id);
+
+  if (accountPatch.currency !== undefined && accountPatch.currency !== existing.currency) {
+    if (hasHistory) {
+      throw new DomainError(
+        "This account already has transactions, so its currency can't be changed — every " +
+          "amount on it is denominated in the current one. Archive it and create a new account " +
+          "in the other currency instead.",
+      );
+    }
+  }
+  if (kindFlips && hasHistory) {
+    throw new DomainError(
+      "This account already has transactions, so it can't be changed between an asset and a " +
+        "liability — the sign of every recorded amount depends on which it is. Archive it and " +
+        "create the right kind of account instead.",
+    );
+  }
+
+  // Recomputed from the (possibly new) type rather than carried over: the DB
+  // CHECK requires `(kind='liability') = (normal_balance='credit')`, so a type
+  // change that moved only one of the pair would be rejected as a raw
+  // constraint failure. An explicit caller-supplied pair is still honoured and
+  // still validated here, as a user-facing message rather than a SQLITE error.
+  const kind =
+    accountPatch.kind ?? (typeChanged ? (isLiability ? "liability" : "asset") : existing.kind);
+  const normalBalance =
+    accountPatch.normalBalance ??
+    (typeChanged ? (isLiability ? "credit" : "debit") : existing.normalBalance);
+  if ((kind === "liability") !== (normalBalance === "credit")) {
+    throw new DomainError("An account's kind and normal balance must agree.");
+  }
+
+  if (loan && !LOAN_TERMS_TYPES.has(type)) {
+    throw new DomainError("Only a loan account takes loan terms.");
+  }
+  if (credit && !CREDIT_TERMS_TYPES.has(type)) {
+    throw new DomainError("Only a credit card or revolving credit account takes credit terms.");
+  }
+
+  const update: Partial<Omit<NewAccount, "id">> = {
+    ...accountPatch,
+    type,
+    kind,
+    normalBalance,
+    // A type change moves the liquidity class with it unless the caller says
+    // otherwise, or a home loan re-typed as savings would keep counting as a
+    // cash buffer.
+    liquidity:
+      accountPatch.liquidity ?? (typeChanged ? LIQUIDITY_BY_TYPE[type] : existing.liquidity),
+  };
+
+  if (accountPatch.openingBalanceMinor !== undefined) {
+    const openingBalanceMinor = accountPatch.openingBalanceMinor;
+    if (!Number.isInteger(openingBalanceMinor)) {
+      throw new DomainError("An opening balance must be a whole number of minor units.");
+    }
+    // Same convention as create: the caller passes a positive "amount owed".
+    update.openingBalanceMinor = isLiability ? -Math.abs(openingBalanceMinor) : openingBalanceMinor;
+  } else if (kindFlips) {
+    // Only reachable with no history (refused above otherwise), so re-signing
+    // the opening balance cannot contradict anything already recorded.
+    update.openingBalanceMinor = isLiability
+      ? -Math.abs(existing.openingBalanceMinor)
+      : Math.abs(existing.openingBalanceMinor);
+  }
+
+  const account = updateAccount(id, update);
+
+  // Pinned to the account's currency for the same reason create does it: a
+  // limit denominated differently from the balance it bounds is uncomparable.
+  if (loan) upsertLoanTerms({ ...loan, accountId: id, currency: account.currency });
+  if (credit) upsertCreditTerms({ ...credit, accountId: id, currency: account.currency });
+
+  return account;
+}
+
+/**
+ * Retires an account without touching a number.
+ *
+ * Archiving is a *picker* concern: the account drops out of the lists people
+ * choose from, while every transaction on it keeps counting, so no balance,
+ * net-worth or report figure moves. `listAccounts` and everything built on it
+ * already exclude archived rows from listings (queries/lifecycle.ts), which is
+ * why nothing here filters again.
+ */
+export function archiveAccountById(id: number) {
+  if (!getAccountByIdRow(id)) throw new DomainError("That account no longer exists.");
+  return archiveAccount(id, todayIso());
+}
+
+export function unarchiveAccountById(id: number) {
+  if (!getAccountByIdRow(id)) throw new DomainError("That account no longer exists.");
+  return archiveAccount(id, null);
+}
+
+/**
+ * Hard-deletes an account, and **refuses** when anything references it.
+ *
+ * The refusal is the point: a transaction, a recurring rule or a holding
+ * pointing at a deleted account is history that can no longer say where the
+ * money was, and there is no way back from that. Archiving does everything a
+ * delete was wanted for — the account disappears from pickers — without it.
+ */
+export function deleteAccountById(id: number) {
+  if (!getAccountByIdRow(id)) throw new DomainError("That account no longer exists.");
+  if (accountHasReferences(id)) {
+    throw new DomainError(
+      "This account has transactions, recurring rules or holdings recorded against it, so it " +
+        "can't be deleted. Archive it instead — it will be hidden from pickers and every " +
+        "existing record stays intact.",
+    );
+  }
+  deleteAccount(id);
 }

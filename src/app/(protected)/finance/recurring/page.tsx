@@ -14,17 +14,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Button } from "@/components/ui/button";
 import { AddRecurringRuleDialog } from "./add-recurring-rule-dialog";
 import { DueWorklist } from "./due-worklist";
+import { formatMoney } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Recurring — Personal Life OS",
 };
-
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default async function RecurringPage() {
   await requireUser();
@@ -40,11 +36,6 @@ export default async function RecurringPage() {
       <PageHeader
         title="Recurring"
         description="Recurring rules — rent, subscriptions, EMIs — and their unconfirmed occurrences."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <Card className="mb-6">
@@ -109,7 +100,7 @@ export default async function RecurringPage() {
                   </TableCell>
                   <TableCell>{r.categoryName ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatAmount(r.amount)}
+                    {formatMoney({ minor: r.amountMinor, currency: r.currency })}
                   </TableCell>
                   <TableCell className="text-muted-foreground capitalize">{r.frequency}</TableCell>
                   <TableCell className="tabular-nums">{r.startDate}</TableCell>

@@ -1,4 +1,5 @@
 import {
+  getCashFlowById,
   getHoldingById,
   getLatestValuation,
   insertCashFlow,
@@ -8,6 +9,8 @@ import {
   listHoldings,
   listHoldingsByGoalId,
   listValuationsForHolding,
+  markCashFlowVoided,
+  setCashFlowSupersededBy,
   type NewCashFlow,
   type NewHolding,
   type NewValuation,
@@ -27,6 +30,7 @@ import { computeXirr, type CashFlowInput } from "../utility/returns";
 import { applyRateBps, fromUnitsScaled, valueOfUnits } from "../utility/units";
 import { daysBetween, todayIso } from "@/lib/dates";
 import { DomainError } from "@/modules/core/errors";
+import { getDb } from "@/modules/core/db/client";
 
 export function createHolding(entry: NewHolding) {
   return insertHolding(entry);
@@ -604,4 +608,104 @@ export function getHoldingCurrency(holdingId: number): Currency {
   const holding = getHoldingById(holdingId);
   if (!holding) throw new DomainError("Holding not found");
   return holding.currency;
+}
+
+// ---------------------------------------------------------------------------
+// Void and correct a cash flow (decision 17: ledger rows are immutable)
+// ---------------------------------------------------------------------------
+
+/**
+ * Without a stated reason a reversed flow is just a gap in a return series
+ * nobody can account for later, so the reason is enforced in the service and
+ * not only in the form schema.
+ */
+function requireFlowReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (trimmed === "") throw new DomainError("Say why this cash flow is being reversed.");
+  return trimmed;
+}
+
+/** The flow, voided or not — for a detail view and for the correction trail. */
+export function getCashFlow(id: number) {
+  return getCashFlowById(id) ?? null;
+}
+
+export interface CashFlowCorrectionTrail {
+  row: NonNullable<ReturnType<typeof getCashFlowById>>;
+  /** Set when the flow was corrected rather than only reversed. */
+  replacement: NonNullable<ReturnType<typeof getCashFlowById>> | null;
+}
+
+/** A flow together with whatever replaced it, so the trail reads forward from
+ * the mistake to the fix in one call. */
+export function getCashFlowCorrectionTrail(id: number): CashFlowCorrectionTrail | null {
+  const row = getCashFlowById(id);
+  if (!row) return null;
+  const replacement =
+    row.supersededById === null ? null : (getCashFlowById(row.supersededById) ?? null);
+  return { row, replacement };
+}
+
+/**
+ * Reverses a cash flow that should not have been recorded. Every return and
+ * valuation path already excludes voided flows, so XIRR, the FIFO cost basis
+ * and the units held all move back together rather than one of them lagging.
+ */
+export function voidCashFlow(id: number, reason: string) {
+  const stated = requireFlowReason(reason);
+  const existing = getCashFlowById(id);
+  if (!existing) throw new DomainError("That cash flow no longer exists.");
+  if (existing.voidedAt !== null)
+    throw new DomainError("That cash flow has already been reversed.");
+  const voided = markCashFlowVoided(id, todayIso(), stated);
+  // Lost the race against a concurrent void: the first reason stands.
+  if (!voided) throw new DomainError("That cash flow has already been reversed.");
+  return voided;
+}
+
+export interface CashFlowCorrection {
+  voided: NonNullable<ReturnType<typeof markCashFlowVoided>>;
+  replacement: ReturnType<typeof insertCashFlow>;
+}
+
+/**
+ * Corrects a cash flow: voids the original and records `replacement` in its
+ * place, with the voided row pointing forward at the new one.
+ *
+ * The replacement goes through `recordCashFlow`, so the sign still comes from
+ * the flow type, the currency still comes from the holding, and a sell is
+ * still checked against the units actually held — a correction cannot bypass a
+ * rule a fresh entry would have hit. Because the void lands first inside the
+ * same DB transaction, that units check sees the corrected world: redeeming
+ * the units the voided flow had claimed is allowed again.
+ *
+ * `replacement` is a user-level input with no id of its own, so there is no
+ * way for a correction to point at itself, and `getCashFlowById` is scoped to
+ * the caller's vault, so there is no way for it to point into another.
+ */
+export function correctCashFlow(
+  id: number,
+  replacement: CashFlowInputFromUser,
+  reason: string,
+): CashFlowCorrection {
+  const stated = requireFlowReason(reason);
+  const original = getCashFlowById(id);
+  if (!original) throw new DomainError("That cash flow no longer exists.");
+  if (original.supersededById !== null) {
+    throw new DomainError(
+      "That cash flow has already been corrected. Correct its replacement instead, so the trail stays one chain.",
+    );
+  }
+  if (original.voidedAt !== null) {
+    throw new DomainError("That cash flow was already reversed, so there is nothing to correct.");
+  }
+
+  return getDb().transaction(() => {
+    const voided = markCashFlowVoided(id, todayIso(), stated);
+    if (!voided) throw new DomainError("That cash flow has already been reversed.");
+    const created = recordCashFlow(replacement);
+    const linked = setCashFlowSupersededBy(id, created.id);
+    if (!linked) throw new DomainError("That cash flow has already been corrected.");
+    return { voided: linked, replacement: created };
+  });
 }

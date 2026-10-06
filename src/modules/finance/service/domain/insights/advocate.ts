@@ -100,14 +100,17 @@ export function budgetHeadroomRule(snapshot: FinanceSnapshot): Insight[] {
     .filter(
       (b) =>
         b.monthlyLimitMinor > 0 &&
-        // Spend and limit are both in the budget's own currency, so the ratio
-        // needs no conversion — and a ratio of two integers is not money, so
-        // float division is correct here.
-        (b.actualSpendMinor / b.monthlyLimitMinor) * 100 <=
+        // An incomplete spend figure understates what has been used, which is
+        // the direction that would wrongly advertise headroom.
+        b.spend.complete &&
+        // Spend has been converted into the budget's own currency, so the ratio
+        // needs no further conversion — and a ratio of two integers is not
+        // money, so float division is correct here.
+        (b.spend.baseMinor / b.monthlyLimitMinor) * 100 <=
           100 - snapshot.settings.budgetHeadroomPercent,
     )
     .map((b) => {
-      const usedPercent = (b.actualSpendMinor / b.monthlyLimitMinor) * 100;
+      const usedPercent = (b.spend.baseMinor / b.monthlyLimitMinor) * 100;
       return {
         id: `budget-headroom:${b.categoryId}:${Math.round(usedPercent)}`,
         category: "advocate" as const,

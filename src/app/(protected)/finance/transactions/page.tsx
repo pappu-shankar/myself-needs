@@ -3,7 +3,6 @@ import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getAccounts, getCategories, getTransactionsPage } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
-import { Button } from "@/components/ui/button";
 import { AddTransactionDialog } from "./add-transaction-dialog";
 import { TransactionsTable } from "./transactions-table";
 import { encodeCursor, parseCursor } from "./cursor";
@@ -54,11 +53,6 @@ export default async function TransactionsPage({
       <PageHeader
         title="Transactions"
         description="Income, expenses, and transfers across your accounts."
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
-            Back to Finance
-          </Button>
-        }
       />
 
       <div className="mb-4 flex items-center justify-between gap-4">

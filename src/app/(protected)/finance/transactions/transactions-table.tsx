@@ -7,7 +7,20 @@ import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 
 import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
+/**
+ * The correction trail.
+ *
+ * A reversed row stays visible rather than disappearing, because the thing
+ * worth seeing is the *pair*: the mistake and what replaced it, with the stated
+ * reason. A listing that silently dropped the voided row would show a corrected
+ * balance with no account of why it changed, which is indistinguishable from
+ * the number having been wrong all along.
+ *
+ * Voided rows only appear when the view asks for them (`?corrections=1`), so
+ * the ordinary listing stays a listing.
+ */
 const columns: DataTableColumnDef<TransactionRow>[] = [
   {
     accessorKey: "date",
@@ -42,7 +55,14 @@ const columns: DataTableColumnDef<TransactionRow>[] = [
     cell: ({ row }) => {
       const t = row.original;
       return (
-        <span className={t.type === "expense" ? "text-destructive" : ""}>
+        <span
+          className={cn(
+            t.type === "expense" && t.voidedAt === null && "text-destructive",
+            // A reversed amount is struck through, so the figure that no longer
+            // counts cannot be mistaken for one that does.
+            t.voidedAt !== null && "text-muted-foreground line-through",
+          )}
+        >
           {t.type === "expense" ? "-" : t.type === "income" ? "+" : ""}
           {formatMoney({ minor: t.amountMinor, currency: t.currency })}
         </span>
@@ -52,7 +72,22 @@ const columns: DataTableColumnDef<TransactionRow>[] = [
   {
     accessorKey: "note",
     header: "Note",
-    cell: ({ row }) => <span className="text-muted-foreground">{row.original.note ?? ""}</span>,
+    cell: ({ row }) => {
+      const t = row.original;
+      if (t.voidedAt === null) {
+        return <span className="text-muted-foreground">{t.note ?? ""}</span>;
+      }
+      return (
+        <span className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground">{t.note ?? ""}</span>
+          <span className="text-destructive text-xs">
+            Reversed {t.voidedAt}
+            {t.voidReason ? ` — ${t.voidReason}` : ""}
+            {t.supersededById !== null && " · replaced below"}
+          </span>
+        </span>
+      );
+    },
   },
 ];
 

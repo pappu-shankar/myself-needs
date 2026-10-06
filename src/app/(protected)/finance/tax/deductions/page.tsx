@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/modules/core/session/guard";
-import Link from "next/link";
 import { currentFiscalYear, get80cUtilization, get80dUtilization } from "@/modules/finance";
 import { STATUTORY_CURRENCY } from "@/modules/finance/service/config/tax";
 import { Money, MoneyFigure } from "../../_components/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { FiscalYearPicker } from "../fiscal-year-picker";
 import { PolicyNote } from "../policy-note";
 import { fiscalYearOptions, selectedFiscalYear } from "../selected-fiscal-year";
@@ -30,11 +28,6 @@ export default async function TaxDeductionsPage({
       <PageHeader
         title="Deductions"
         description={`80C and 80D utilization for FY ${fy.label} (${fy.start} to ${fy.end}).`}
-        actions={
-          <Button variant="outline" nativeButton={false} render={<Link href="/finance/tax" />}>
-            Back to Tax planning
-          </Button>
-        }
       />
 
       <FiscalYearPicker

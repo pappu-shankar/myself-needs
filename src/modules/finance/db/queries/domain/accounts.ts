@@ -1,9 +1,11 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
 import { accounts } from "../../schema/domain/accounts";
 import { transactions } from "../../schema/domain/transactions";
 import { loanTerms } from "../../schema/domain/loan-terms";
 import { creditTerms } from "../../schema/domain/credit-terms";
+import { recurringRules } from "../../schema/domain/recurring-rules";
+import { investmentHoldings } from "../../schema/domain/investment-holdings";
 import type { Currency } from "../../schema/currency";
 import { unarchived, type LifecycleScope } from "../lifecycle";
 
@@ -96,7 +98,11 @@ export function getAccountsTotalByCurrency(
   const deltas = transactionDeltasByAccount(asOfDate);
   const ids = new Set(accountIds);
   const totals = new Map<Currency, number>();
-  for (const account of listAccounts()) {
+  // `includeArchived` because the caller already decided which accounts count
+  // by passing their ids. Re-filtering here would silently drop an id the
+  // caller deliberately included, which is how archiving an account with a
+  // balance came to reduce reported net worth.
+  for (const account of listAccounts({ includeArchived: true })) {
     if (!ids.has(account.id)) continue;
     const minor = account.openingBalanceMinor + (deltas.get(account.id) ?? 0);
     totals.set(account.currency, (totals.get(account.currency) ?? 0) + minor);
@@ -211,4 +217,70 @@ export function listAccountTerms(): Map<number, AccountTermsRow> {
   }
 
   return terms;
+}
+
+/* ── Write paths: edit in place, archive, delete ─────────────────────────────
+ * Decision 17: an account is a descriptive row, so it is edited in place and
+ * archived rather than deleted. The reference checks below are what make the
+ * refusal real — a hard delete that got past them would orphan every
+ * transaction leg on the account. */
+
+export function updateAccount(id: number, patch: Partial<Omit<NewAccount, "id">>) {
+  return getDb().update(accounts).set(patch).where(eq(accounts.id, id)).returning().get();
+}
+
+/** `null` un-archives. One function for both directions so the column is only
+ * ever written in one place. */
+export function archiveAccount(id: number, archivedAt: string | null) {
+  return getDb().update(accounts).set({ archivedAt }).where(eq(accounts.id, id)).returning().get();
+}
+
+/**
+ * Whether any transaction leg touches this account — either side of a transfer.
+ *
+ * Deliberately counts **voided** rows too. A void is a correction trail, not a
+ * deletion: the voided row still names this account, and dropping the account
+ * from under it would leave the trail pointing at nothing. This is also the
+ * gate for the two edits that would reinterpret existing legs (currency, and a
+ * type change that flips asset↔liability), so it must be the widest possible
+ * reading of "has history".
+ */
+export function accountHasTransactions(id: number): boolean {
+  return (
+    getDb()
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(or(eq(transactions.accountId, id), eq(transactions.toAccountId, id)))
+      .get() !== undefined
+  );
+}
+
+/** Everything that would be orphaned by a hard delete. The terms satellites are
+ * excluded on purpose: they are owned by the account (one row, keyed to it) and
+ * are removed with it, unlike history, which outlives it. */
+export function accountHasReferences(id: number): boolean {
+  if (accountHasTransactions(id)) return true;
+  const db = getDb();
+  const rule = db
+    .select({ id: recurringRules.id })
+    .from(recurringRules)
+    .where(or(eq(recurringRules.accountId, id), eq(recurringRules.toAccountId, id)))
+    .get();
+  if (rule) return true;
+  return (
+    db
+      .select({ id: investmentHoldings.id })
+      .from(investmentHoldings)
+      .where(eq(investmentHoldings.accountId, id))
+      .get() !== undefined
+  );
+}
+
+/** Only ever reached for an account nothing references — the service checks
+ * first. The satellite rows go first because they hold the FK to the account. */
+export function deleteAccount(id: number) {
+  const db = getDb();
+  db.delete(loanTerms).where(eq(loanTerms.accountId, id)).run();
+  db.delete(creditTerms).where(eq(creditTerms.accountId, id)).run();
+  db.delete(accounts).where(eq(accounts.id, id)).run();
 }

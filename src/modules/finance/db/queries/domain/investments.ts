@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
 import { investmentHoldings } from "../../schema/domain/investment-holdings";
 import { investmentCashFlows } from "../../schema/domain/investment-cash-flows";
@@ -95,6 +95,45 @@ export function listCashFlowsForHolding(
     )
     .orderBy(desc(investmentCashFlows.date), desc(investmentCashFlows.id))
     .all();
+}
+
+/**
+ * One cash flow by id with **no** void filter — the two callers that need it
+ * (voiding a flow, showing the correction trail) are specifically asking about
+ * a row that may already be reversed. Vault scoping comes from `getDb()`, so a
+ * correction aimed at another vault's flow finds nothing rather than needing a
+ * check of its own.
+ */
+export function getCashFlowById(id: number) {
+  return getDb().select().from(investmentCashFlows).where(eq(investmentCashFlows.id, id)).get();
+}
+
+/**
+ * Stamps the void. `live(voidedAt)` is in the WHERE rather than a prior read,
+ * so a second concurrent void gets `undefined` back instead of overwriting the
+ * first reason.
+ */
+export function markCashFlowVoided(id: number, voidedAt: string, reason: string) {
+  return getDb()
+    .update(investmentCashFlows)
+    .set({ voidedAt, voidReason: reason, updatedAt: sql`(current_timestamp)` })
+    .where(and(eq(investmentCashFlows.id, id), live(investmentCashFlows.voidedAt)))
+    .returning()
+    .get();
+}
+
+/**
+ * Points a voided flow forward at its replacement, so the trail reads from the
+ * mistake to the fix. `isNull(supersededById)` stops a row being re-pointed at
+ * a second replacement, which would fork the chain.
+ */
+export function setCashFlowSupersededBy(id: number, replacementId: number) {
+  return getDb()
+    .update(investmentCashFlows)
+    .set({ supersededById: replacementId, updatedAt: sql`(current_timestamp)` })
+    .where(and(eq(investmentCashFlows.id, id), isNull(investmentCashFlows.supersededById)))
+    .returning()
+    .get();
 }
 
 export function listAllCashFlows(scope: LifecycleScope = {}) {
