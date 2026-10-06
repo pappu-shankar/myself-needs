@@ -14,9 +14,15 @@ export {
 export { getCategories, getCategoriesByType, createCategory } from "./service/domain/categories";
 export {
   getTransactionsPage,
+  getHasAnyTransactions,
   getRecentTransactions,
   createTransaction,
 } from "./service/domain/transactions";
+export type {
+  TransactionsCursor,
+  TransactionsCursorPageParams,
+  TransactionRow,
+} from "./db/queries/domain/transactions";
 export { getBudgetsForMonth, createBudget } from "./service/domain/budgets";
 export { getRecurringRules, getDueWorklist, createRecurringRule } from "./service/domain/recurring";
 export { getInsurancePolicies, createInsurancePolicy } from "./service/domain/insurance";
@@ -26,13 +32,22 @@ export { getIncomeExpenseReport, getEmergencyFundMonths } from "./service/domain
 export { getCurrentAllocation, getAllocationReport } from "./service/domain/allocation";
 export { getFinanceSettings } from "./service/config/allocation";
 export {
-  getCurrentFinancialYear,
   get80cUtilization,
   get80dUtilization,
   getCapitalGainsEstimate,
   getRegimeComparison,
+  listTaxFiscalYears,
+  type CapitalGainsEstimate,
+  type RegimeComparison,
 } from "./service/domain/tax";
-export { getTaxSettingsView, getTaxSlabsView } from "./service/config/tax";
+export { getTaxPolicyView, listTaxPolicyYears } from "./service/config/tax";
+export {
+  currentFiscalYear,
+  fiscalYearOf,
+  parseFiscalYearLabel,
+  shiftFiscalYear,
+  type FiscalYear,
+} from "./service/utility/fiscal-year";
 export { getInsights } from "./service/domain/insights/engine";
 export { getInsightsSettingsView } from "./service/config/insights-settings";
 export { searchFinance } from "./service/domain/search";
@@ -82,9 +97,10 @@ export {
 } from "./actions/config/allocation";
 export {
   updateTaxSettingsAction,
-  type UpdateTaxSettingsState,
-  updateSlabRateAction,
-  type UpdateSlabRateState,
+  startFiscalYearAction,
+  addTaxSlabAction,
+  updateTaxSlabAction,
+  deleteTaxSlabAction,
 } from "./actions/config/tax";
 export { dismissInsightAction, type DismissInsightState } from "./actions/domain/insights";
 export {

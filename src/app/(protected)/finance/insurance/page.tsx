@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { todayIso } from "@/lib/dates";
 import Link from "next/link";
 import { getRecurringRules, getInsurancePolicies } from "@/modules/finance";
@@ -26,7 +26,7 @@ function formatAmount(amount: number) {
 }
 
 export default async function InsurancePage() {
-  await requireUnlocked();
+  await requireUser();
   const recurringRules = getRecurringRules();
   const insurancePolicies = getInsurancePolicies();
   const today = todayIso();

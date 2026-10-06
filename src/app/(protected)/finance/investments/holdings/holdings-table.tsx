@@ -18,6 +18,7 @@ function formatPercent(rate: number | null) {
 const BASIS_LABEL = {
   valuation: "market",
   accrual: "accrued est.",
+  balance: "balance",
   net_invested: "net invested",
 } as const;
 
@@ -103,14 +104,25 @@ export function HoldingsTable({
         id: "currentValue",
         header: "Current value",
         meta: { align: "right", width: "200px" },
-        cell: ({ row }) => (
-          <>
-            {formatAmount(row.original.currentValue)}
-            <span className="text-muted-foreground ml-1 text-xs">
-              ({BASIS_LABEL[row.original.basis]})
-            </span>
-          </>
-        ),
+        cell: ({ row }) => {
+          const h = row.original;
+          if (h.missing === "units") return <span className="text-destructive">Add units</span>;
+          if (h.missing === "price")
+            return <span className="text-muted-foreground">No price yet</span>;
+          return (
+            <>
+              {formatAmount(h.currentValue)}
+              <span className="text-muted-foreground ml-1 text-xs">
+                ({h.closed ? "closed" : BASIS_LABEL[h.basis]})
+              </span>
+              {h.maturedOn && (
+                <span className="text-destructive block text-xs">
+                  Matured on {h.maturedOn} — record the payout
+                </span>
+              )}
+            </>
+          );
+        },
       },
       {
         id: "xirr",

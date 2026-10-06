@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { getGoals } from "@/modules/plans";
 // Cross-module composition at the app layer, not a plans→finance import —
 // see docs/prd/finance/goal-linked-investments.md.
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PlansPage() {
-  await requireUnlocked();
+  await requireUser();
   const goals = getGoals();
 
   return (

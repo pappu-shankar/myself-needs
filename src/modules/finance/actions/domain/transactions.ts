@@ -1,20 +1,23 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
+import type { ActionState } from "@/modules/core/action/types";
+import { zId, zIsoDate, zOptionalText, zPositiveAmount } from "@/lib/validation";
 import { createTransaction } from "../../service/domain/transactions";
 import { TRANSACTION_TYPES } from "../../types";
 
+export type AddTransactionState = ActionState;
+
 const transactionSchema = z
   .object({
-    type: z.enum(TRANSACTION_TYPES),
-    accountId: z.coerce.number().int(),
-    toAccountId: z.coerce.number().int().optional(),
-    categoryId: z.coerce.number().int().optional(),
-    amount: z.coerce.number().positive("Amount must be greater than 0"),
-    date: z.string().min(1, "Date is required"),
-    note: z.string().optional(),
+    type: z.enum(TRANSACTION_TYPES, { error: "Pick a transaction type" }),
+    accountId: zId,
+    toAccountId: zId.optional(),
+    categoryId: zId.optional(),
+    amount: zPositiveAmount,
+    date: zIsoDate,
+    note: zOptionalText(),
   })
   .refine((data) => data.type !== "transfer" || data.toAccountId !== undefined, {
     message: "Destination account is required for transfers",
@@ -29,41 +32,18 @@ const transactionSchema = z
     path: ["toAccountId"],
   });
 
-export interface AddTransactionState {
-  error?: string;
-}
-
-export async function addTransactionAction(
-  _prevState: AddTransactionState,
-  formData: FormData,
-): Promise<AddTransactionState> {
-  await requireUnlocked();
-  const parsed = transactionSchema.safeParse({
-    type: formData.get("type"),
-    accountId: formData.get("accountId"),
-    toAccountId: formData.get("toAccountId") || undefined,
-    categoryId: formData.get("categoryId") || undefined,
-    amount: formData.get("amount"),
-    date: formData.get("date"),
-    note: formData.get("note") || undefined,
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid transaction" };
-  }
-
-  createTransaction({
-    type: parsed.data.type,
-    accountId: parsed.data.accountId,
-    toAccountId: parsed.data.type === "transfer" ? (parsed.data.toAccountId ?? null) : null,
-    categoryId: parsed.data.type === "transfer" ? null : (parsed.data.categoryId ?? null),
-    amount: parsed.data.amount,
-    date: parsed.data.date,
-    note: parsed.data.note ?? null,
-  });
-
-  revalidatePath("/finance");
-  revalidatePath("/finance/transactions");
-  revalidatePath("/dashboard");
-  return {};
-}
+export const addTransactionAction = defineFormAction(
+  transactionSchema,
+  (input) => {
+    createTransaction({
+      type: input.type,
+      accountId: input.accountId,
+      toAccountId: input.type === "transfer" ? (input.toAccountId ?? null) : null,
+      categoryId: input.type === "transfer" ? null : (input.categoryId ?? null),
+      amount: input.amount,
+      date: input.date,
+      note: input.note ?? null,
+    });
+  },
+  { name: "finance:add-transaction" },
+);

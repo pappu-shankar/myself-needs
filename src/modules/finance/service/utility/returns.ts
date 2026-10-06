@@ -37,13 +37,20 @@ export function computeXirr(
   currentValue: number,
   asOfDate: string,
 ): number | null {
-  const transactions = withCurrentValue(cashFlows, currentValue, asOfDate).map((cf) => ({
-    amount: cf.amount,
-    when: new Date(cf.date),
-  }));
+  const transactions = withCurrentValue(cashFlows, currentValue, asOfDate)
+    .filter((cf) => cf.amount !== 0)
+    .map((cf) => ({ amount: cf.amount, when: new Date(cf.date) }));
+
+  // A rate only exists when money went both in and out. Without this guard a
+  // holding with contributions but no value yet (e.g. no valuation recorded)
+  // comes back from the solver as -100% instead of "not enough data".
+  if (!transactions.some((t) => t.amount > 0) || !transactions.some((t) => t.amount < 0)) {
+    return null;
+  }
 
   try {
-    return xirrPackage(transactions);
+    const rate = xirrPackage(transactions);
+    return Number.isFinite(rate) && rate > -1 ? rate : null;
   } catch {
     return null;
   }
@@ -107,8 +114,11 @@ export function computeIrr(amounts: number[]): number | null {
 
 /** Single start value/date + end value/date, no interim cash flows — e.g. "this lumpsum grew from X to Y over N years." */
 export function computeCagr(startValue: number, endValue: number, years: number): number | null {
-  if (startValue <= 0 || years <= 0) return null;
-  return Math.pow(endValue / startValue, 1 / years) - 1;
+  // Growth between a non-positive start or end isn't a rate (and the power of a
+  // negative ratio is NaN), so report "not enough data" instead.
+  if (!(startValue > 0) || !(endValue > 0) || !(years > 0)) return null;
+  const rate = Math.pow(endValue / startValue, 1 / years) - 1;
+  return Number.isFinite(rate) ? rate : null;
 }
 
 /** Compounds `principal` annually at `annualRatePercent` for `years` — the shared formula behind the lumpsum and inflation calculators (they ask the same question in different units). */

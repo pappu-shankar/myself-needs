@@ -1,0 +1,50 @@
+# Usage: cp .env.example .env, edit it, then `docker compose up -d --build`.
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_PUBLIC_ORIGIN: ${APP_PUBLIC_ORIGIN:?set APP_PUBLIC_ORIGIN in .env}
+        GIT_SHA: ${GIT_SHA:-}
+    restart: unless-stopped
+    environment:
+      APP_PUBLIC_ORIGIN: ${APP_PUBLIC_ORIGIN}
+      APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-}
+      APP_TRUST_PROXY: "1"
+      APP_SETUP_TOKEN: ${APP_SETUP_TOKEN:-}
+      APP_IDLE_LOCK_MINUTES: ${APP_IDLE_LOCK_MINUTES:-30}
+      APP_SESSION_MAX_HOURS: ${APP_SESSION_MAX_HOURS:-12}
+      APP_MAX_OPEN_VAULTS: ${APP_MAX_OPEN_VAULTS:-50}
+      APP_PROFILE_PICKER: ${APP_PROFILE_PICKER:-0}
+    volumes:
+      - appdata:/app/data
+    networks: [internal]
+    expose: ["3000"] # private network only; never `ports:`
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  appdata:
+  caddy_data:
+  caddy_config:

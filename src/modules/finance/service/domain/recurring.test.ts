@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
 import {
   confirmRecurringOccurrence,
@@ -6,6 +6,7 @@ import {
   getDueWorklist,
   getRecurringRules,
 } from "./recurring";
+import { createTransaction } from "./transactions";
 import { createAccount } from "./accounts";
 import { createCategory } from "./categories";
 
@@ -98,7 +99,10 @@ describe("recurring service", () => {
     ]);
   });
 
-  it("confirming an occurrence marks off the oldest unlogged period, regardless of which date the user picked", () => {
+  it("confirming a specific due period marks off only that period, tagging the transaction with it", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-20T00:00:00Z"));
+
     const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
     const category = createCategory({ name: "Rent", type: "expense" });
     const rule = createRecurringRule({
@@ -111,21 +115,207 @@ describe("recurring service", () => {
       note: "Rent",
     });
 
-    expect(getDueWorklist("2026-04-20").filter((i) => i.ruleId === rule.id)).toHaveLength(4);
+    expect(getDueWorklist().map((i) => i.periodStart)).toEqual([
+      "2026-01-15",
+      "2026-02-15",
+      "2026-03-15",
+      "2026-04-15",
+    ]);
 
-    // Confirm using April's date, but the worklist only tracks a *count* of logged
-    // transactions against the rule, not which specific period was confirmed — so
-    // this still marks off January (the oldest unlogged period), leaving April due.
-    confirmRecurringOccurrence({ ruleId: rule.id, amount: 1000, date: "2026-04-15", note: null });
+    // Confirm April specifically, out of order — unlike the old count-based
+    // logic (which always settled the oldest unlogged period regardless of
+    // which date the user picked), this marks off exactly the period
+    // confirmed, leaving the earlier ones still due.
+    const transaction = confirmRecurringOccurrence({
+      ruleId: rule.id,
+      periodStart: "2026-04-15",
+      amount: 1000,
+      date: "2026-04-18",
+      note: null,
+    });
+    expect(transaction).toMatchObject({ recurringRuleId: rule.id, periodStart: "2026-04-15" });
 
-    const due = getDueWorklist("2026-04-20").filter((i) => i.ruleId === rule.id);
-    expect(due.map((i) => i.periodStart)).toEqual(["2026-02-15", "2026-03-15", "2026-04-15"]);
+    const due = getDueWorklist().map((i) => i.periodStart);
+    expect(due).toEqual(["2026-01-15", "2026-02-15", "2026-03-15"]);
+
+    vi.useRealTimers();
+  });
+
+  it("rejects double-confirming the same period with a friendly error, on the second attempt", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-20T00:00:00Z"));
+
+    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const rule = createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      frequency: "monthly",
+      startDate: "2026-01-15",
+      note: "Rent",
+    });
+
+    const input = { ruleId: rule.id, periodStart: "2026-01-15", amount: 1000, date: "2026-01-16", note: null };
+    confirmRecurringOccurrence(input);
+
+    // A double submit / two tabs re-sending the same confirmation — the
+    // period is no longer due, so this fails with a user-facing message
+    // instead of silently logging a second transaction for it.
+    expect(() => confirmRecurringOccurrence(input)).toThrow(/not due|already/i);
+    expect(getDueWorklist().filter((i) => i.ruleId === rule.id)).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("the (recurring_rule_id, period_start) unique index blocks a duplicate at the DB level even if a caller bypasses the due-list check", () => {
+    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const rule = createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      frequency: "monthly",
+      startDate: "2026-01-15",
+      note: "Rent",
+    });
+
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      date: "2026-01-15",
+      recurringRuleId: rule.id,
+      periodStart: "2026-01-15",
+    });
+
+    // This is the final backstop for a genuine race between two concurrent
+    // confirms of the same period — the due-list pre-check alone can't catch
+    // that, since both requests could read "still due" before either commits.
+    expect(() =>
+      createTransaction({
+        type: "expense",
+        accountId: account.id,
+        categoryId: category.id,
+        amount: 1000,
+        date: "2026-01-16",
+        recurringRuleId: rule.id,
+        periodStart: "2026-01-15",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects confirming a period that is not actually due yet", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-20T00:00:00Z"));
+
+    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const rule = createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      frequency: "monthly",
+      startDate: "2026-01-15",
+      note: "Rent",
+    });
+
+    // Only January is due as of today; a client sending April's date (e.g. a
+    // stale form, or a tampered request) must not be trusted.
+    expect(() =>
+      confirmRecurringOccurrence({
+        ruleId: rule.id,
+        periodStart: "2026-04-15",
+        amount: 1000,
+        date: "2026-04-15",
+        note: null,
+      }),
+    ).toThrow(/not due/i);
+
+    vi.useRealTimers();
+  });
+
+  it("legacy rows (period_start = NULL, from before this feature) are skipped via a count-based fallback", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-20T00:00:00Z"));
+
+    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+    const category = createCategory({ name: "Rent", type: "expense" });
+    const rule = createRecurringRule({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      frequency: "monthly",
+      startDate: "2026-01-15",
+      note: "Rent",
+    });
+
+    // Simulate two confirmations made before the period_start column existed.
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      date: "2026-01-20",
+      recurringRuleId: rule.id,
+    });
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1000,
+      date: "2026-02-18",
+      recurringRuleId: rule.id,
+    });
+
+    // The oldest 2 scheduled periods (Jan, Feb) are treated as settled by the
+    // legacy count fallback; March and April are still due.
+    expect(getDueWorklist().map((i) => i.periodStart)).toEqual(["2026-03-15", "2026-04-15"]);
+
+    // A fresh, period_start-tagged confirmation layers correctly on top of that legacy history.
+    confirmRecurringOccurrence({
+      ruleId: rule.id,
+      periodStart: "2026-04-15",
+      amount: 1000,
+      date: "2026-04-20",
+      note: null,
+    });
+    expect(getDueWorklist().map((i) => i.periodStart)).toEqual(["2026-03-15"]);
+
+    vi.useRealTimers();
   });
 
   it("confirmRecurringOccurrence throws for an unknown rule id", () => {
     expect(() =>
-      confirmRecurringOccurrence({ ruleId: 999, amount: 100, date: "2026-01-01", note: null }),
+      confirmRecurringOccurrence({
+        ruleId: 999,
+        periodStart: "2026-01-01",
+        amount: 100,
+        date: "2026-01-01",
+        note: null,
+      }),
     ).toThrow("Recurring rule not found");
+  });
+
+  it("createRecurringRule rejects a recurring transfer whose from and to account are the same", () => {
+    const account = createAccount({ name: "Checking", type: "checking", openingBalance: 0 });
+
+    expect(() =>
+      createRecurringRule({
+        type: "transfer",
+        accountId: account.id,
+        toAccountId: account.id,
+        amount: 500,
+        frequency: "monthly",
+        startDate: "2026-01-01",
+        note: "Self transfer",
+      }),
+    ).toThrow("different destination account");
   });
 
   it("sorts the due worklist by period start across multiple rules", () => {

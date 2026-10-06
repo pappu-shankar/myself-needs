@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
-import { getCurrentFinancialYear } from "@/modules/finance";
+import { currentFiscalYear } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { NavCard } from "@/components/ui/nav-card";
@@ -11,14 +11,14 @@ export const metadata: Metadata = {
 };
 
 export default async function TaxPlanningPage() {
-  await requireUnlocked();
-  const fy = getCurrentFinancialYear();
+  await requireUser();
+  const fy = currentFiscalYear();
 
   return (
     <>
       <PageHeader
         title="Tax planning"
-        description={`Estimates only for ${fy.label} — not a filing tool, not a substitute for a CA.`}
+        description={`Estimates only — defaults to the current FY ${fy.label}. Not a filing tool, not a substitute for a CA.`}
         actions={
           <Button variant="outline" nativeButton={false} render={<Link href="/finance" />}>
             Back to Finance
@@ -30,7 +30,7 @@ export default async function TaxPlanningPage() {
         <NavCard
           href="/finance/tax/deductions"
           title="Deductions"
-          description="80C and 80D utilization for the current financial year"
+          description="80C and 80D utilization per financial year"
         />
         <NavCard
           href="/finance/tax/regime-comparison"
@@ -40,12 +40,12 @@ export default async function TaxPlanningPage() {
         <NavCard
           href="/finance/tax/capital-gains"
           title="Capital gains"
-          description="FIFO-matched gains from redemptions"
+          description="FIFO-matched gains from redemptions in a financial year"
         />
         <NavCard
           href="/finance/settings"
           title="Settings"
-          description="Reference rates and slab rates — now shared with the rest of Finance"
+          description="Per-FY reference rates and slab brackets — shared with the rest of Finance"
         />
       </div>
     </>

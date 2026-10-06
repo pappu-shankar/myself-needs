@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { todayIso } from "@/lib/dates";
 import { getMetrics, getMetricTrend, getMedications, getTodaysMedications } from "@/modules/health";
 import { HEALTH_METRIC_TYPES, type HealthMetricType } from "@/modules/health/types";
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { NavCard } from "@/components/ui/nav-card";
 import { MetricForm } from "./metric-form";
 import { MetricTrendChart } from "./metric-trend-chart";
 import { MedicationForm } from "./medication-form";
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 export default async function HealthPage() {
-  await requireUnlocked();
+  await requireUser();
   const metrics = getMetrics();
   const medications = getMedications();
   const today = todayIso();
@@ -36,7 +37,14 @@ export default async function HealthPage() {
 
   return (
     <>
-      <PageHeader title="Health" description="Vitals and medications." />
+      <PageHeader title="Health" description="Vitals, medications and training." />
+
+      <NavCard
+        href="/health/gym"
+        title="Gym & training"
+        description="Routines, live workouts, progression, recovery and body composition."
+        className="mb-6"
+      />
 
       <Card className="mb-6">
         <CardHeader>

@@ -7,8 +7,22 @@ import { transactions } from "../../schema/domain/transactions";
 
 export type NewBudget = typeof budgets.$inferInsert;
 
-export function insertBudget(entry: NewBudget) {
-  return getDb().insert(budgets).values(entry).returning().get();
+/**
+ * `(category_id, effective_from)` is unique — setting a budget again for the
+ * same category and effective date (e.g. the "Add budget" form defaults
+ * `effectiveFrom` to today, so doing it twice in one day is easy) updates the
+ * existing row's limit instead of failing. See docs/prd/finance/budgets.md.
+ */
+export function upsertBudget(entry: NewBudget) {
+  return getDb()
+    .insert(budgets)
+    .values(entry)
+    .onConflictDoUpdate({
+      target: [budgets.categoryId, budgets.effectiveFrom],
+      set: { monthlyLimit: entry.monthlyLimit },
+    })
+    .returning()
+    .get();
 }
 
 /**

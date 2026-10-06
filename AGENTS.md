@@ -10,12 +10,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Personal Life OS — Agent Guide
 
-Single-user, local-only personal life management app (finance/health/mental/plans/house) built as a modular monolith. Full detail lives in the docs below — this file is a map, not a copy.
+Multi-user, self-hosted personal life management app (finance/health/mental/plans/house/fashion) built as a modular monolith. Every user has their own encrypted vault; users can share encrypted spaces; an admin invites people and manages accounts but cannot read their data. It can be exposed to the internet behind a TLS reverse proxy ([docs/deploy.md](./docs/deploy.md)). Full detail lives in the docs below — this file is a map, not a copy.
 
 - **Product requirements:** [PRD.md](./PRD.md)
 - **Architecture (layering, module boundaries, security, performance):** [ARCHITECTURE.md](./ARCHITECTURE.md)
 - **Build plan / current status:** [ROADMAP.md](./ROADMAP.md)
 - **Design system:** [DESIGN.md](./DESIGN.md)
+- **Security / multi-user:** [docs/architecture/security.md](./docs/architecture/security.md), [docs/architecture/multi-user-contracts.md](./docs/architecture/multi-user-contracts.md)
+- **Deploying:** [docs/deploy.md](./docs/deploy.md)
 
 ## The one rule that matters most
 
@@ -23,7 +25,7 @@ Modules (`src/modules/finance`, `health`, `mental`, `plans`, `house`, `fashion`,
 
 **Also:** a `"use client"` component calling a Server Action must import it from `modules/<module>/actions.ts` directly, never from the module's `index.ts` barrel — the barrel also carries plain service/query code that transitively needs the native SQLite binding, which breaks the client bundle. Symptom looks like a generic `ENOENT build-manifest.json` on first request, not an obvious import error. Same doc has the full explanation.
 
-**Every Server Action** is built with `defineFormAction`/`defineAction` (`src/modules/core/action/define-action.ts`) — it enforces the unlocked session, Zod validation and consistent `ActionState` results. **Every protected page** starts with `await requireUnlocked()`. Services throw `DomainError` for user-facing failures. "Today" is `todayIso()` from `src/lib/dates.ts`, never `toISOString().slice(0, 10)`. All of this is checked by `src/test/architecture.test.ts`. Details: [docs/architecture/system-design.md](./docs/architecture/system-design.md#server-actions-and-pages-the-enforced-conventions).
+**Every Server Action** is built with `defineFormAction`/`defineAction` (`src/modules/core/action/define-action.ts`) — it enforces a signed-in user, binds that user's vault, applies Zod validation and returns consistent `ActionState` results; mark non-writing actions `readOnly: true` so space viewers can use them. Admin actions use `defineAdminAction` and never touch another user's vault. **Every protected page, layout and `generateMetadata`** starts with `await requireUser()` (`requireAdmin()` for admin pages); route handlers and hand-written actions wrap their work in `withUser()`. Never call `AsyncLocalStorage.enterWith`. `getDb()` throws when no request scope is bound — that is deliberate (fail closed). `requireUnlocked` is a deprecated alias of `requireUser`. Services throw `DomainError` for user-facing failures. "Today" is `todayIso()` from `src/lib/dates.ts`, never `toISOString().slice(0, 10)`. All of this is checked by `src/test/architecture.test.ts`. Details: [docs/architecture/system-design.md](./docs/architecture/system-design.md#server-actions-and-pages-the-enforced-conventions).
 
 ## Where things live
 
@@ -57,9 +59,9 @@ When spawning a subagent (Agent/Task tool or equivalent), pick the model tier an
 - Prefer short, direct updates over exhaustive narration. State what changed and what's next.
 - When a design decision has real tradeoffs (e.g. today's AGENTS.md vs CLAUDE.md-only choice, or per-app vs shared current-feature), surface the tradeoff and ask rather than picking silently.
 
-## Live/manual testing — never touch the real vault
+## Live/manual testing — never touch the real data
 
-This is a single-user app: `data/app.db` is the one real vault a real user's actual financial/health/mental/plans data lives in. Any live exploration (`pnpm dev` + a browser, Playwright, etc.) must run against an isolated data directory instead — set `APP_DATA_DIR=data-dev` (already gitignored, see `src/modules/core/env/paths.ts`) before starting the dev server, e.g. `APP_DATA_DIR=data-dev pnpm dev`. Never unlock or write to `data/app.db` for testing purposes. Automated tests already avoid this — the Vitest harness (`src/test/db.ts`) uses a fresh in-memory database per test, never touching disk at all.
+`data/` holds real users' encrypted data: `data/accounts.db`, `data/users/`, `data/spaces/`, `data/avatars/`, `data/session-secret.bin` (and, on an un-migrated install, `data/app.db` + `keyring.json`). Never unlock, read or write any of it for testing. Any live exploration (`pnpm dev` + a browser, Playwright, etc.) must run against an isolated data directory instead — set `APP_DATA_DIR=data-dev` (already gitignored, see `src/modules/core/env/paths.ts`) before starting the dev server, e.g. `APP_DATA_DIR=data-dev pnpm dev`. Never sign in to, or write to, `data/` for testing purposes. **Before exercising the legacy claim flow** (`/claim`), which renames files in the data directory, back it up first: `cp -a data-dev data-dev.bak`. Automated tests already avoid this — the Vitest harness (`src/test/db.ts`) uses a fresh in-memory database per test (via `setTestDefaultDatabase`), and registry/crypto tests use a temp `APP_DATA_DIR`.
 
 **Running a verification server alongside a real dev session:** `next dev`'s single-instance lock lives under `distDir` and is keyed by project directory, not by port — so a second `next dev` for this repo refuses to start even on a different port while a real session (e.g. the user's own `pnpm dev` against `data/app.db`) is running. `next.config.ts` reads `NEXT_DIST_DIR` to point a one-off server at its own build/lock directory (`.next-verify`, already gitignored) so it can run concurrently without touching the other session: `APP_DATA_DIR=data-dev NEXT_DIST_DIR=.next-verify pnpm exec next dev -H 127.0.0.1 -p 3055`. Leave `NEXT_DIST_DIR` unset for normal use.
 

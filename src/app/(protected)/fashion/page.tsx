@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getPhotos } from "@/modules/fashion";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function FashionPage() {
-  await requireUnlocked();
+  await requireUser();
   const photos = getPhotos();
 
   return (

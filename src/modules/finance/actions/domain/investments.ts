@@ -1,165 +1,110 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
+import type { ActionState } from "@/modules/core/action/types";
 import {
-  createCashFlow,
+  zCheckbox,
+  zId,
+  zIsoDate,
+  zOptionalText,
+  zPercent,
+  zPositiveAmount,
+  zPositiveNumber,
+  zText,
+} from "@/lib/validation";
+import {
   createHolding,
   createValuation,
+  recordCashFlow,
   refreshMutualFundNav,
 } from "../../service/domain/investments";
-import { INVESTMENT_TYPES, CASH_FLOW_TYPES } from "../../types";
+import { INVESTMENT_TYPES, CASH_FLOW_TYPES, ACCRUAL_TYPES } from "../../types";
 
-const holdingSchema = z.object({
-  type: z.enum(INVESTMENT_TYPES),
-  name: z.string().min(1, "Name is required"),
-  accountId: z.coerce.number().int().optional(),
-  units: z.coerce.number().positive().optional(),
-  interestRate: z.coerce.number().optional(),
-  maturityDate: z.string().optional(),
-  schemeTemplateId: z.coerce.number().int().optional(),
-  externalCode: z.string().optional(),
-  notes: z.string().optional(),
-  is80cEligible: z.coerce.boolean(),
-  linkedGoalId: z.coerce.number().int().optional(),
-});
+export type AddHoldingState = ActionState;
+export type AddCashFlowState = ActionState;
+export type AddValuationState = ActionState;
+export type RefreshNavState = ActionState;
 
-export interface AddHoldingState {
-  error?: string;
-}
-
-export async function addHoldingAction(
-  _prevState: AddHoldingState,
-  formData: FormData,
-): Promise<AddHoldingState> {
-  await requireUnlocked();
-  const parsed = holdingSchema.safeParse({
-    type: formData.get("type"),
-    name: formData.get("name"),
-    accountId: formData.get("accountId") || undefined,
-    units: formData.get("units") || undefined,
-    interestRate: formData.get("interestRate") || undefined,
-    maturityDate: formData.get("maturityDate") || undefined,
-    schemeTemplateId: formData.get("schemeTemplateId") || undefined,
-    externalCode: formData.get("externalCode") || undefined,
-    notes: formData.get("notes") || undefined,
-    is80cEligible: formData.get("is80cEligible") === "on",
-    linkedGoalId: formData.get("linkedGoalId") || undefined,
+const holdingSchema = z
+  .object({
+    type: z.enum(INVESTMENT_TYPES, { error: "Pick a holding type" }),
+    name: zText("Name"),
+    accountId: zId.optional(),
+    interestRate: zPercent.optional(),
+    maturityDate: zIsoDate.optional(),
+    schemeTemplateId: zId.optional(),
+    externalCode: z
+      .string()
+      .trim()
+      .regex(/^\d{1,10}$/, "AMFI scheme codes are numbers, e.g. 119551")
+      .optional(),
+    notes: zOptionalText(),
+    is80cEligible: zCheckbox,
+    linkedGoalId: zId.optional(),
+  })
+  .refine((h) => !ACCRUAL_TYPES.has(h.type) || h.interestRate !== undefined, {
+    message: "Enter the interest rate",
+    path: ["interestRate"],
   });
 
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid holding" };
-  }
+/**
+ * Units are no longer set on the holding itself: they come from the units on
+ * each buy/sell cash flow (see `recordCashFlow`). The holding's `units` column
+ * is only read as an opening balance for older holdings.
+ */
+export const addHoldingAction = defineFormAction(
+  holdingSchema,
+  (input) => {
+    const isAccrual = ACCRUAL_TYPES.has(input.type);
+    createHolding({
+      type: input.type,
+      name: input.name,
+      accountId: input.accountId ?? null,
+      units: null,
+      interestRate: isAccrual ? (input.interestRate ?? null) : null,
+      maturityDate: isAccrual ? (input.maturityDate ?? null) : null,
+      schemeTemplateId: input.type === "govt_scheme" ? (input.schemeTemplateId ?? null) : null,
+      externalCode: input.type === "mutual_fund_domestic" ? (input.externalCode ?? null) : null,
+      notes: input.notes ?? null,
+      is80cEligible: input.is80cEligible,
+      linkedGoalId: input.linkedGoalId ?? null,
+    });
+  },
+  { name: "finance:add-holding" },
+);
 
-  createHolding({
-    type: parsed.data.type,
-    name: parsed.data.name,
-    accountId: parsed.data.accountId ?? null,
-    units: parsed.data.units ?? null,
-    interestRate: parsed.data.interestRate ?? null,
-    maturityDate: parsed.data.maturityDate ?? null,
-    schemeTemplateId:
-      parsed.data.type === "govt_scheme" ? (parsed.data.schemeTemplateId ?? null) : null,
-    externalCode:
-      parsed.data.type === "mutual_fund_domestic" ? (parsed.data.externalCode ?? null) : null,
-    notes: parsed.data.notes ?? null,
-    is80cEligible: parsed.data.is80cEligible,
-    linkedGoalId: parsed.data.linkedGoalId ?? null,
-  });
+/** Amount and units are entered as positive numbers; the service derives signs from the flow type. */
+export const addCashFlowAction = defineFormAction(
+  z.object({
+    holdingId: zId,
+    date: zIsoDate,
+    amount: zPositiveAmount,
+    flowType: z.enum(CASH_FLOW_TYPES, { error: "Pick a flow type" }),
+    units: zPositiveNumber.optional(),
+  }),
+  (input) => {
+    recordCashFlow(input);
+  },
+  { name: "finance:add-investment-cash-flow" },
+);
 
-  revalidatePath("/finance/investments/holdings");
-  revalidatePath("/finance/investments");
-  return {};
-}
+export const addValuationAction = defineFormAction(
+  z.object({
+    holdingId: zId,
+    date: zIsoDate,
+    pricePerUnit: zPositiveNumber,
+  }),
+  (input) => {
+    createValuation(input);
+  },
+  { name: "finance:add-valuation" },
+);
 
-const cashFlowSchema = z.object({
-  holdingId: z.coerce.number().int(),
-  date: z.string().min(1, "Date is required"),
-  amount: z.coerce.number().refine((v) => v !== 0, "Amount can't be zero"),
-  flowType: z.enum(CASH_FLOW_TYPES),
-});
-
-export interface AddCashFlowState {
-  error?: string;
-}
-
-export async function addCashFlowAction(
-  _prevState: AddCashFlowState,
-  formData: FormData,
-): Promise<AddCashFlowState> {
-  await requireUnlocked();
-  const parsed = cashFlowSchema.safeParse({
-    holdingId: formData.get("holdingId"),
-    date: formData.get("date"),
-    amount: formData.get("amount"),
-    flowType: formData.get("flowType"),
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid cash flow" };
-  }
-
-  createCashFlow(parsed.data);
-
-  revalidatePath("/finance/investments/holdings");
-  revalidatePath("/finance/investments");
-  return {};
-}
-
-const valuationSchema = z.object({
-  holdingId: z.coerce.number().int(),
-  date: z.string().min(1, "Date is required"),
-  pricePerUnit: z.coerce.number().positive("Price must be greater than 0"),
-});
-
-export interface AddValuationState {
-  error?: string;
-}
-
-export async function addValuationAction(
-  _prevState: AddValuationState,
-  formData: FormData,
-): Promise<AddValuationState> {
-  await requireUnlocked();
-  const parsed = valuationSchema.safeParse({
-    holdingId: formData.get("holdingId"),
-    date: formData.get("date"),
-    pricePerUnit: formData.get("pricePerUnit"),
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid valuation" };
-  }
-
-  createValuation(parsed.data);
-
-  revalidatePath("/finance/investments/holdings");
-  revalidatePath("/finance/investments");
-  return {};
-}
-
-export interface RefreshNavState {
-  error?: string;
-}
-
-export async function refreshNavAction(
-  _prevState: RefreshNavState,
-  formData: FormData,
-): Promise<RefreshNavState> {
-  await requireUnlocked();
-  const holdingId = Number(formData.get("holdingId"));
-  if (!Number.isInteger(holdingId)) {
-    return { error: "Invalid holding" };
-  }
-
-  try {
+export const refreshNavAction = defineFormAction(
+  z.object({ holdingId: zId }),
+  async ({ holdingId }) => {
     await refreshMutualFundNav(holdingId);
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "NAV refresh failed" };
-  }
-
-  revalidatePath("/finance/investments/holdings");
-  revalidatePath("/finance/investments");
-  return {};
-}
+  },
+  { name: "finance:refresh-nav" },
+);

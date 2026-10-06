@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
 import { createPhoto, getPhoto, updateSkinTone } from "./service/photos";
 import { createOutfit, deleteOutfit } from "./service/outfits";
 import { createGarment, deleteGarment } from "./service/garments";
@@ -20,40 +20,38 @@ export interface UploadPhotoState {
   photoId?: number;
 }
 
-export async function uploadPhotoAction(
-  _prevState: UploadPhotoState,
-  formData: FormData,
-): Promise<UploadPhotoState> {
-  await requireUnlocked();
-  const file = formData.get("photo");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a photo to upload" };
-  }
-  if (!(PHOTO_MIME_TYPES as readonly string[]).includes(file.type)) {
-    return { error: "Photo must be a JPEG, PNG, or WebP image" };
-  }
-  if (file.size > MAX_PHOTO_BYTES) {
-    return { error: "Photo must be under 15 MB" };
-  }
+export const uploadPhotoAction = defineFormAction(
+  async (_prevState: UploadPhotoState, formData: FormData): Promise<UploadPhotoState> => {
+    const file = formData.get("photo");
+    if (!(file instanceof File) || file.size === 0) {
+      return { error: "Choose a photo to upload" };
+    }
+    if (!(PHOTO_MIME_TYPES as readonly string[]).includes(file.type)) {
+      return { error: "Photo must be a JPEG, PNG, or WebP image" };
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      return { error: "Photo must be under 15 MB" };
+    }
 
-  const widthPx = Number(formData.get("widthPx"));
-  const heightPx = Number(formData.get("heightPx"));
-  if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx) || widthPx <= 0 || heightPx <= 0) {
-    return { error: "Missing photo dimensions" };
-  }
+    const widthPx = Number(formData.get("widthPx"));
+    const heightPx = Number(formData.get("heightPx"));
+    if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx) || widthPx <= 0 || heightPx <= 0) {
+      return { error: "Missing photo dimensions" };
+    }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const created = createPhoto({
-    bytes,
-    originalName: file.name || null,
-    mimeType: file.type as (typeof PHOTO_MIME_TYPES)[number],
-    widthPx,
-    heightPx,
-  });
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const created = createPhoto({
+      bytes,
+      originalName: file.name || null,
+      mimeType: file.type as (typeof PHOTO_MIME_TYPES)[number],
+      widthPx,
+      heightPx,
+    });
 
-  revalidatePath("/fashion");
-  return { photoId: created.id };
-}
+    revalidatePath("/fashion");
+    return { photoId: created.id };
+  },
+);
 
 const skinToneSchema = z.object({
   photoId: z.coerce.number().int(),
@@ -70,27 +68,25 @@ export interface UpdateSkinToneState {
  * after client-side pose/segmentation finishes running (async, post-
  * upload) — the photo row is created first so the upload flow doesn't
  * block on ML inference, then this action patches the sampled tone onto it. */
-export async function updateSkinToneAction(
-  _prevState: UpdateSkinToneState,
-  formData: FormData,
-): Promise<UpdateSkinToneState> {
-  await requireUnlocked();
-  const parsed = skinToneSchema.safeParse({
-    photoId: formData.get("photoId"),
-    labL: formData.get("labL"),
-    labA: formData.get("labA"),
-    labB: formData.get("labB"),
-  });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid skin tone" };
+export const updateSkinToneAction = defineFormAction(
+  async (_prevState: UpdateSkinToneState, formData: FormData): Promise<UpdateSkinToneState> => {
+    const parsed = skinToneSchema.safeParse({
+      photoId: formData.get("photoId"),
+      labL: formData.get("labL"),
+      labA: formData.get("labA"),
+      labB: formData.get("labB"),
+    });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid skin tone" };
 
-  updateSkinTone(parsed.data.photoId, {
-    l: parsed.data.labL,
-    a: parsed.data.labA,
-    b: parsed.data.labB,
-  });
-  revalidatePath("/fashion");
-  return {};
-}
+    updateSkinTone(parsed.data.photoId, {
+      l: parsed.data.labL,
+      a: parsed.data.labA,
+      b: parsed.data.labB,
+    });
+    revalidatePath("/fashion");
+    return {};
+  },
+);
 
 const outfitSchema = z.object({
   photoId: z.coerce.number().int(),
@@ -105,44 +101,42 @@ export interface SaveOutfitState {
   outfitId?: number;
 }
 
-export async function saveOutfitAction(
-  _prevState: SaveOutfitState,
-  formData: FormData,
-): Promise<SaveOutfitState> {
-  await requireUnlocked();
-  const parsed = outfitSchema.safeParse({
-    photoId: formData.get("photoId"),
-    name: formData.get("name"),
-    shirtColorHex: formData.get("shirtColorHex"),
-    pantsColorHex: formData.get("pantsColorHex"),
-    note: formData.get("note") || undefined,
-  });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid outfit" };
+export const saveOutfitAction = defineFormAction(
+  async (_prevState: SaveOutfitState, formData: FormData): Promise<SaveOutfitState> => {
+    const parsed = outfitSchema.safeParse({
+      photoId: formData.get("photoId"),
+      name: formData.get("name"),
+      shirtColorHex: formData.get("shirtColorHex"),
+      pantsColorHex: formData.get("pantsColorHex"),
+      note: formData.get("note") || undefined,
+    });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid outfit" };
 
-  const photo = getPhoto(parsed.data.photoId);
-  if (!photo) return { error: "Photo not found" };
+    const photo = getPhoto(parsed.data.photoId);
+    if (!photo) return { error: "Photo not found" };
 
-  // Contrast is recomputed here from the photo's cached skin tone rather
-  // than trusted from the client's live preview, so a saved score can't
-  // drift from — or be spoofed relative to — what's actually stored.
-  const skinTone =
-    photo.skinToneLabL !== null && photo.skinToneLabA !== null && photo.skinToneLabB !== null
-      ? { l: photo.skinToneLabL, a: photo.skinToneLabA, b: photo.skinToneLabB }
-      : null;
+    // Contrast is recomputed here from the photo's cached skin tone rather
+    // than trusted from the client's live preview, so a saved score can't
+    // drift from — or be spoofed relative to — what's actually stored.
+    const skinTone =
+      photo.skinToneLabL !== null && photo.skinToneLabA !== null && photo.skinToneLabB !== null
+        ? { l: photo.skinToneLabL, a: photo.skinToneLabA, b: photo.skinToneLabB }
+        : null;
 
-  const created = createOutfit({
-    photoId: parsed.data.photoId,
-    name: parsed.data.name,
-    shirtColorHex: parsed.data.shirtColorHex,
-    pantsColorHex: parsed.data.pantsColorHex,
-    shirtContrastScore: skinTone ? scoreContrast(parsed.data.shirtColorHex, skinTone) : null,
-    pantsContrastScore: skinTone ? scoreContrast(parsed.data.pantsColorHex, skinTone) : null,
-    note: parsed.data.note ?? null,
-  });
+    const created = createOutfit({
+      photoId: parsed.data.photoId,
+      name: parsed.data.name,
+      shirtColorHex: parsed.data.shirtColorHex,
+      pantsColorHex: parsed.data.pantsColorHex,
+      shirtContrastScore: skinTone ? scoreContrast(parsed.data.shirtColorHex, skinTone) : null,
+      pantsContrastScore: skinTone ? scoreContrast(parsed.data.pantsColorHex, skinTone) : null,
+      note: parsed.data.note ?? null,
+    });
 
-  revalidatePath("/fashion");
-  return { outfitId: created.id };
-}
+    revalidatePath("/fashion");
+    return { outfitId: created.id };
+  },
+);
 
 const deleteOutfitSchema = z.object({ id: z.coerce.number().int() });
 
@@ -150,18 +144,16 @@ export interface DeleteOutfitState {
   error?: string;
 }
 
-export async function deleteOutfitAction(
-  _prevState: DeleteOutfitState,
-  formData: FormData,
-): Promise<DeleteOutfitState> {
-  await requireUnlocked();
-  const parsed = deleteOutfitSchema.safeParse({ id: formData.get("id") });
-  if (!parsed.success) return { error: "Invalid outfit" };
+export const deleteOutfitAction = defineFormAction(
+  async (_prevState: DeleteOutfitState, formData: FormData): Promise<DeleteOutfitState> => {
+    const parsed = deleteOutfitSchema.safeParse({ id: formData.get("id") });
+    if (!parsed.success) return { error: "Invalid outfit" };
 
-  deleteOutfit(parsed.data.id);
-  revalidatePath("/fashion");
-  return {};
-}
+    deleteOutfit(parsed.data.id);
+    revalidatePath("/fashion");
+    return {};
+  },
+);
 
 const uploadGarmentFieldsSchema = z.object({
   category: z.enum(GARMENT_CATEGORIES),
@@ -183,44 +175,42 @@ export interface UploadGarmentState {
  * async model-loading dependency, so it's computed and submitted in the
  * same request as the file.
  */
-export async function uploadGarmentAction(
-  _prevState: UploadGarmentState,
-  formData: FormData,
-): Promise<UploadGarmentState> {
-  await requireUnlocked();
-  const file = formData.get("photo");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a garment photo to upload" };
-  }
-  if (file.size > MAX_PHOTO_BYTES) {
-    return { error: "Photo must be under 15 MB" };
-  }
+export const uploadGarmentAction = defineFormAction(
+  async (_prevState: UploadGarmentState, formData: FormData): Promise<UploadGarmentState> => {
+    const file = formData.get("photo");
+    if (!(file instanceof File) || file.size === 0) {
+      return { error: "Choose a garment photo to upload" };
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      return { error: "Photo must be under 15 MB" };
+    }
 
-  const parsed = uploadGarmentFieldsSchema.safeParse({
-    category: formData.get("category"),
-    representativeColorLabL: formData.get("representativeColorLabL"),
-    representativeColorLabA: formData.get("representativeColorLabA"),
-    representativeColorLabB: formData.get("representativeColorLabB"),
-    representativeColorHex: formData.get("representativeColorHex"),
-  });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid garment" };
+    const parsed = uploadGarmentFieldsSchema.safeParse({
+      category: formData.get("category"),
+      representativeColorLabL: formData.get("representativeColorLabL"),
+      representativeColorLabA: formData.get("representativeColorLabA"),
+      representativeColorLabB: formData.get("representativeColorLabB"),
+      representativeColorHex: formData.get("representativeColorHex"),
+    });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid garment" };
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const created = createGarment({
-    bytes,
-    originalName: file.name || null,
-    category: parsed.data.category,
-    representativeColor: {
-      l: parsed.data.representativeColorLabL,
-      a: parsed.data.representativeColorLabA,
-      b: parsed.data.representativeColorLabB,
-      hex: parsed.data.representativeColorHex,
-    },
-  });
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const created = createGarment({
+      bytes,
+      originalName: file.name || null,
+      category: parsed.data.category,
+      representativeColor: {
+        l: parsed.data.representativeColorLabL,
+        a: parsed.data.representativeColorLabA,
+        b: parsed.data.representativeColorLabB,
+        hex: parsed.data.representativeColorHex,
+      },
+    });
 
-  revalidatePath("/fashion/wardrobe");
-  return { garmentId: created.id };
-}
+    revalidatePath("/fashion/wardrobe");
+    return { garmentId: created.id };
+  },
+);
 
 const deleteGarmentSchema = z.object({ id: z.coerce.number().int() });
 
@@ -228,18 +218,16 @@ export interface DeleteGarmentState {
   error?: string;
 }
 
-export async function deleteGarmentAction(
-  _prevState: DeleteGarmentState,
-  formData: FormData,
-): Promise<DeleteGarmentState> {
-  await requireUnlocked();
-  const parsed = deleteGarmentSchema.safeParse({ id: formData.get("id") });
-  if (!parsed.success) return { error: "Invalid garment" };
+export const deleteGarmentAction = defineFormAction(
+  async (_prevState: DeleteGarmentState, formData: FormData): Promise<DeleteGarmentState> => {
+    const parsed = deleteGarmentSchema.safeParse({ id: formData.get("id") });
+    if (!parsed.success) return { error: "Invalid garment" };
 
-  deleteGarment(parsed.data.id);
-  revalidatePath("/fashion/wardrobe");
-  return {};
-}
+    deleteGarment(parsed.data.id);
+    revalidatePath("/fashion/wardrobe");
+    return {};
+  },
+);
 
 const savePhysiqueSchema = z.object({
   photoId: z.coerce.number().int(),
@@ -256,28 +244,26 @@ export interface SavePhysiqueState {
  * is computed client-side right after pose/segmentation analysis
  * finishes, then persisted here so it doesn't need recomputing on every
  * later visit to this photo's character view. */
-export async function savePhysiqueAction(
-  _prevState: SavePhysiqueState,
-  formData: FormData,
-): Promise<SavePhysiqueState> {
-  await requireUnlocked();
-  const parsed = savePhysiqueSchema.safeParse({
-    photoId: formData.get("photoId"),
-    ratiosJson: formData.get("ratiosJson"),
-    categoriesJson: formData.get("categoriesJson"),
-    description: formData.get("description"),
-  });
-  if (!parsed.success)
-    return { error: parsed.error.issues[0]?.message ?? "Invalid physique summary" };
+export const savePhysiqueAction = defineFormAction(
+  async (_prevState: SavePhysiqueState, formData: FormData): Promise<SavePhysiqueState> => {
+    const parsed = savePhysiqueSchema.safeParse({
+      photoId: formData.get("photoId"),
+      ratiosJson: formData.get("ratiosJson"),
+      categoriesJson: formData.get("categoriesJson"),
+      description: formData.get("description"),
+    });
+    if (!parsed.success)
+      return { error: parsed.error.issues[0]?.message ?? "Invalid physique summary" };
 
-  try {
-    JSON.parse(parsed.data.ratiosJson);
-    JSON.parse(parsed.data.categoriesJson);
-  } catch {
-    return { error: "Invalid physique summary" };
-  }
+    try {
+      JSON.parse(parsed.data.ratiosJson);
+      JSON.parse(parsed.data.categoriesJson);
+    } catch {
+      return { error: "Invalid physique summary" };
+    }
 
-  createPhysique(parsed.data);
-  revalidatePath("/fashion");
-  return {};
-}
+    createPhysique(parsed.data);
+    revalidatePath("/fashion");
+    return {};
+  },
+);

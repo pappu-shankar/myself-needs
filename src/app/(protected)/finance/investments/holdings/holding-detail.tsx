@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 import { todayIso } from "@/lib/dates";
+import { useActionSuccess } from "@/lib/use-action-success";
 import {
   addCashFlowAction,
   type AddCashFlowState,
@@ -10,7 +11,12 @@ import {
   refreshNavAction,
   type RefreshNavState,
 } from "@/modules/finance/actions/domain/investments";
-import { CASH_FLOW_TYPES, UNIT_PRICED_TYPES } from "@/modules/finance/types";
+import {
+  CASH_FLOW_TYPES,
+  UNIT_PRICED_TYPES,
+  type CashFlowType,
+  type InvestmentType,
+} from "@/modules/finance/types";
 import type {
   getHoldingsWithValue,
   getCashFlowsForHolding,
@@ -37,12 +43,51 @@ function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatUnits(units: number) {
+  return units.toLocaleString("en-IN", { maximumFractionDigits: 4 });
+}
+
 const cashFlowInitial: AddCashFlowState = {};
 const valuationInitial: AddValuationState = {};
 const refreshInitial: RefreshNavState = {};
 
-function CashFlowSection({ holdingId, cashFlows }: { holdingId: number; cashFlows: CashFlow[] }) {
+/** Flows that buy or sell units — units are required for these on unit-priced holdings. */
+const UNIT_FLOWS = new Set<CashFlowType>(["contribution", "redemption", "maturity"]);
+
+function flowTypeLabel(holdingType: InvestmentType, flowType: CashFlowType) {
+  // Govt schemes: `interest` = credited into the scheme (raises the balance),
+  // `dividend` = interest paid out to you. See computeSchemeBalance.
+  if (holdingType === "govt_scheme") {
+    if (flowType === "interest") return "Interest credited";
+    if (flowType === "dividend") return "Interest paid out";
+  }
+  if (flowType === "redemption")
+    return UNIT_PRICED_TYPES.has(holdingType) ? "Sell / redeem" : "Withdrawal";
+  if (flowType === "contribution")
+    return UNIT_PRICED_TYPES.has(holdingType) ? "Buy / invest" : "Deposit / contribution";
+  return flowType[0].toUpperCase() + flowType.slice(1);
+}
+
+function CashFlowSection({
+  holdingId,
+  holdingType,
+  cashFlows,
+}: {
+  holdingId: number;
+  holdingType: InvestmentType;
+  cashFlows: CashFlow[];
+}) {
   const [state, formAction, isPending] = useActionState(addCashFlowAction, cashFlowInitial);
+  const [flowType, setFlowType] = useState<CashFlowType>("contribution");
+  const formRef = useRef<HTMLFormElement>(null);
+  useActionSuccess(state, () => {
+    formRef.current?.reset();
+    setFlowType("contribution");
+  });
+
+  const isUnitPriced = UNIT_PRICED_TYPES.has(holdingType);
+  const needsUnits = isUnitPriced && UNIT_FLOWS.has(flowType);
+  const fieldError = (name: string) => state.fieldErrors?.[name]?.[0];
 
   return (
     <div>
@@ -55,6 +100,7 @@ function CashFlowSection({ holdingId, cashFlows }: { holdingId: number; cashFlow
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Type</TableHead>
+              {isUnitPriced && <TableHead className="text-right">Units</TableHead>}
               <TableHead className="text-right">Amount</TableHead>
             </TableRow>
           </TableHeader>
@@ -62,11 +108,18 @@ function CashFlowSection({ holdingId, cashFlows }: { holdingId: number; cashFlow
             {cashFlows.map((cf) => (
               <TableRow key={cf.id}>
                 <TableCell className="tabular-nums">{cf.date}</TableCell>
-                <TableCell className="text-muted-foreground capitalize">{cf.flowType}</TableCell>
-                <TableCell
-                  className={`text-right tabular-nums ${cf.amount < 0 ? "" : "text-destructive"}`}
-                >
-                  {cf.amount < 0 ? "in " : "out "}
+                <TableCell className="text-muted-foreground">
+                  {flowTypeLabel(holdingType, cf.flowType)}
+                </TableCell>
+                {isUnitPriced && (
+                  <TableCell className="text-right tabular-nums">
+                    {cf.units === null
+                      ? "—"
+                      : `${cf.units > 0 ? "+" : "−"}${formatUnits(Math.abs(cf.units))}`}
+                  </TableCell>
+                )}
+                <TableCell className="text-right tabular-nums">
+                  {cf.amount < 0 ? "invested " : "received "}
                   {formatAmount(Math.abs(cf.amount))}
                 </TableCell>
               </TableRow>
@@ -75,37 +128,79 @@ function CashFlowSection({ holdingId, cashFlows }: { holdingId: number; cashFlow
         </Table>
       )}
 
-      <form action={formAction} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-4">
+      <form
+        ref={formRef}
+        action={formAction}
+        className="grid grid-cols-1 items-start gap-3 sm:grid-cols-5"
+      >
         <input type="hidden" name="holdingId" value={holdingId} />
-        <FormField label="Date" htmlFor={`cf-date-${holdingId}`}>
-          <Input type="date" name="date" required defaultValue={todayIso()} />
-        </FormField>
-        <FormField
-          label="Amount"
-          htmlFor={`cf-amount-${holdingId}`}
-          hint="Negative = money in, positive = money out"
-        >
-          <Input type="number" step="any" name="amount" required className="tabular-nums" />
+        <FormField label="Date" htmlFor={`cf-date-${holdingId}`} error={fieldError("date")}>
+          <Input
+            type="date"
+            id={`cf-date-${holdingId}`}
+            name="date"
+            required
+            defaultValue={todayIso()}
+          />
         </FormField>
         <FormField label="Flow type" htmlFor={`cf-type-${holdingId}`}>
           <select
+            id={`cf-type-${holdingId}`}
             name="flowType"
+            value={flowType}
+            onChange={(e) => setFlowType(e.target.value as CashFlowType)}
             className="border-input bg-background h-8 rounded-md border px-3 text-sm"
           >
             {CASH_FLOW_TYPES.map((t) => (
               <option key={t} value={t}>
-                {t[0].toUpperCase() + t.slice(1)}
+                {flowTypeLabel(holdingType, t)}
               </option>
             ))}
           </select>
         </FormField>
+        <FormField
+          label="Amount (₹)"
+          htmlFor={`cf-amount-${holdingId}`}
+          hint={flowType === "contribution" ? "Money you put in" : "Money you received"}
+          error={fieldError("amount")}
+        >
+          <Input
+            type="number"
+            id={`cf-amount-${holdingId}`}
+            step="0.01"
+            min="0.01"
+            name="amount"
+            required
+            className="tabular-nums"
+          />
+        </FormField>
+        {needsUnits ? (
+          <FormField
+            label="Units"
+            htmlFor={`cf-units-${holdingId}`}
+            hint={flowType === "contribution" ? "Units bought" : "Units sold"}
+            error={fieldError("units")}
+          >
+            <Input
+              type="number"
+              id={`cf-units-${holdingId}`}
+              step="any"
+              min="0"
+              name="units"
+              required
+              className="tabular-nums"
+            />
+          </FormField>
+        ) : (
+          <div className="hidden sm:block" />
+        )}
         <FormFieldAction label="Add cash flow">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Adding…" : "Add cash flow"}
           </Button>
         </FormFieldAction>
-        {state.error && (
-          <p role="alert" className="text-destructive text-sm sm:col-span-4">
+        {state.error && !state.fieldErrors && (
+          <p role="alert" className="text-destructive text-sm sm:col-span-5">
             {state.error}
           </p>
         )}
@@ -124,6 +219,8 @@ function ValuationSection({
   externalCode: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(addValuationAction, valuationInitial);
+  const formRef = useRef<HTMLFormElement>(null);
+  useActionSuccess(state, () => formRef.current?.reset());
   const [refreshState, refreshAction, isRefreshing] = useActionState(
     refreshNavAction,
     refreshInitial,
@@ -171,25 +268,93 @@ function ValuationSection({
         </Table>
       )}
 
-      <form action={formAction} className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
+      <form
+        ref={formRef}
+        action={formAction}
+        className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3"
+      >
         <input type="hidden" name="holdingId" value={holdingId} />
-        <FormField label="Date" htmlFor={`val-date-${holdingId}`}>
-          <Input type="date" name="date" required defaultValue={todayIso()} />
+        <FormField
+          label="Date"
+          htmlFor={`val-date-${holdingId}`}
+          hint="One price per day; re-entering a day replaces it"
+          error={state.fieldErrors?.date?.[0]}
+        >
+          <Input
+            type="date"
+            id={`val-date-${holdingId}`}
+            name="date"
+            required
+            defaultValue={todayIso()}
+          />
         </FormField>
-        <FormField label="Price / unit" htmlFor={`val-price-${holdingId}`}>
-          <Input type="number" step="any" name="pricePerUnit" required className="tabular-nums" />
+        <FormField
+          label="Price / unit"
+          htmlFor={`val-price-${holdingId}`}
+          error={state.fieldErrors?.pricePerUnit?.[0]}
+        >
+          <Input
+            type="number"
+            id={`val-price-${holdingId}`}
+            step="any"
+            min="0"
+            name="pricePerUnit"
+            required
+            className="tabular-nums"
+          />
         </FormField>
         <FormFieldAction label="Add valuation">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Adding…" : "Add valuation"}
           </Button>
         </FormFieldAction>
-        {state.error && (
+        {state.error && !state.fieldErrors && (
           <p role="alert" className="text-destructive text-sm sm:col-span-3">
             {state.error}
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+/** Units held and anything the value is waiting on — shown above the ledger. */
+function HoldingStatus({ holding }: { holding: Holding }) {
+  const isUnitPriced = UNIT_PRICED_TYPES.has(holding.type);
+  const notes: { text: string; tone: "warning" | "muted" }[] = [];
+  if (holding.missing === "units") {
+    notes.push({
+      text: "Add units: record a buy with the number of units so this holding can be valued. Until then it counts as 0 in totals.",
+      tone: "warning",
+    });
+  } else if (holding.missing === "price") {
+    notes.push({ text: "No price recorded yet — add a valuation below.", tone: "warning" });
+  }
+  if (holding.maturedOn) {
+    notes.push({
+      text: `Matured on ${holding.maturedOn} — record the payout. Valued at its maturity amount until then.`,
+      tone: "warning",
+    });
+  }
+  if (holding.closed) notes.push({ text: "Closed — fully paid out or redeemed.", tone: "muted" });
+
+  if (!isUnitPriced && notes.length === 0) return null;
+  return (
+    <div className="mb-4 flex flex-col gap-1 text-sm">
+      {isUnitPriced && holding.units !== null && (
+        <p className="text-muted-foreground">
+          Units held:{" "}
+          <span className="text-foreground tabular-nums">{formatUnits(holding.units)}</span>
+        </p>
+      )}
+      {notes.map((n) => (
+        <p
+          key={n.text}
+          className={n.tone === "warning" ? "text-destructive" : "text-muted-foreground"}
+        >
+          {n.text}
+        </p>
+      ))}
     </div>
   );
 }
@@ -247,6 +412,7 @@ export function HoldingDetail({
 
         {holding && (
           <>
+            <HoldingStatus holding={holding} />
             {UNIT_PRICED_TYPES.has(holding.type) ? (
               <ValuationSection
                 holdingId={holding.id}
@@ -257,6 +423,7 @@ export function HoldingDetail({
             <div className={UNIT_PRICED_TYPES.has(holding.type) ? "mt-6" : ""}>
               <CashFlowSection
                 holdingId={holding.id}
+                holdingType={holding.type}
                 cashFlows={cashFlowsByHolding[holding.id] ?? []}
               />
             </div>

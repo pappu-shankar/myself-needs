@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
 import { createAccount } from "../../service/domain/accounts";
 import { ACCOUNT_TYPES } from "../../types";
 
@@ -23,41 +23,39 @@ export interface AddAccountState {
   error?: string;
 }
 
-export async function addAccountAction(
-  _prevState: AddAccountState,
-  formData: FormData,
-): Promise<AddAccountState> {
-  await requireUnlocked();
-  const parsed = accountSchema.safeParse({
-    name: formData.get("name"),
-    type: formData.get("type"),
-    openingBalance: formData.get("openingBalance") || 0,
-    creditLimit: formData.get("creditLimit") || undefined,
-    interestRate: formData.get("interestRate") || undefined,
-    originalAmount: formData.get("originalAmount") || undefined,
-    emiAmount: formData.get("emiAmount") || undefined,
-    tenureMonths: formData.get("tenureMonths") || undefined,
-    includeInNetWorth: formData.get("includeInNetWorth") === "on",
-  });
+export const addAccountAction = defineFormAction(
+  async (_prevState: AddAccountState, formData: FormData): Promise<AddAccountState> => {
+    const parsed = accountSchema.safeParse({
+      name: formData.get("name"),
+      type: formData.get("type"),
+      openingBalance: formData.get("openingBalance") || 0,
+      creditLimit: formData.get("creditLimit") || undefined,
+      interestRate: formData.get("interestRate") || undefined,
+      originalAmount: formData.get("originalAmount") || undefined,
+      emiAmount: formData.get("emiAmount") || undefined,
+      tenureMonths: formData.get("tenureMonths") || undefined,
+      includeInNetWorth: formData.get("includeInNetWorth") === "on",
+    });
 
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid account" };
-  }
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid account" };
+    }
 
-  createAccount({
-    name: parsed.data.name,
-    type: parsed.data.type,
-    openingBalance: parsed.data.openingBalance,
-    creditLimit: parsed.data.creditLimit ?? null,
-    interestRate: parsed.data.interestRate ?? null,
-    originalAmount: parsed.data.originalAmount ?? null,
-    emiAmount: parsed.data.emiAmount ?? null,
-    tenureMonths: parsed.data.tenureMonths ?? null,
-    excludeFromNetWorth: parsed.data.type === "receivable" && !parsed.data.includeInNetWorth,
-  });
+    createAccount({
+      name: parsed.data.name,
+      type: parsed.data.type,
+      openingBalance: parsed.data.openingBalance,
+      creditLimit: parsed.data.creditLimit ?? null,
+      interestRate: parsed.data.interestRate ?? null,
+      originalAmount: parsed.data.originalAmount ?? null,
+      emiAmount: parsed.data.emiAmount ?? null,
+      tenureMonths: parsed.data.tenureMonths ?? null,
+      excludeFromNetWorth: parsed.data.type === "receivable" && !parsed.data.includeInNetWorth,
+    });
 
-  revalidatePath("/finance");
-  revalidatePath("/finance/accounts");
-  revalidatePath("/dashboard");
-  return {};
-}
+    revalidatePath("/finance");
+    revalidatePath("/finance/accounts");
+    revalidatePath("/dashboard");
+    return {};
+  },
+);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { getDataDir } from "@/modules/core/env/paths";
+import { getCurrentVaultDataDir, PRIVATE_DIR_MODE } from "@/modules/core/env/paths";
 import {
   deleteGarmentRow,
   getGarmentByFilenameRow,
@@ -15,9 +15,9 @@ import { DomainError } from "@/modules/core/errors";
 const GARMENTS_SUBDIR = "fashion-garments";
 
 function garmentsDir(): string {
-  const dir = path.join(getDataDir(), GARMENTS_SUBDIR);
+  const dir = path.join(getCurrentVaultDataDir(), GARMENTS_SUBDIR);
   if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
   }
   return dir;
 }

@@ -1,58 +1,79 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { redirect } from "next/navigation";
+import { getMyProfile } from "@/modules/core/auth/queries";
+import { requireUser } from "@/modules/core/session/guard";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader } from "@/components/ui/page-header";
-import { RotateRecoveryKeyForm } from "./rotate-recovery-key-form";
-import { ChangePassphraseForm } from "./change-passphrase-form";
+import { AvatarUploader } from "./avatar-uploader";
+import { formatWhen } from "./format-when";
+import { ProfileForm } from "./profile-form";
 
 export const metadata: Metadata = {
-  title: "Settings — Personal Life OS",
+  title: "Profile — Settings — Personal Life OS",
 };
 
-function idleLockDescription(): string {
-  const raw = process.env.APP_IDLE_LOCK_MINUTES;
-  if (raw === "0") return "Auto-lock is turned off (APP_IDLE_LOCK_MINUTES=0).";
-  const minutes = raw && Number(raw) > 0 ? Number(raw) : 30;
-  return `The vault locks itself after ${minutes} minutes without activity. Change this with the APP_IDLE_LOCK_MINUTES environment variable.`;
-}
-
-export default async function SettingsPage() {
-  await requireUnlocked();
+export default async function ProfileSettingsPage() {
+  const scope = await requireUser();
+  const profile = getMyProfile(scope);
+  if (!profile) redirect("/login");
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <PageHeader title="Settings" description="Vault security for this device." />
-
+    <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Recovery key</CardTitle>
+          <CardTitle>Account</CardTitle>
           <CardDescription>
-            Generate a new recovery key if the old one was lost or seen by someone else. The old key
-            stops working immediately.
+            Signed in as <span className="text-foreground font-medium">{profile.username}</span>.
+            Usernames can&apos;t be changed.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <RotateRecoveryKeyForm />
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">Role</dt>
+            <dd>
+              <Badge variant={profile.role === "admin" ? "default" : "secondary"}>
+                {profile.role === "admin" ? "Admin" : "Member"}
+              </Badge>
+            </dd>
+            <dt className="text-muted-foreground">Member since</dt>
+            <dd>{formatWhen(profile.createdAt)}</dd>
+            {profile.lastLoginAt && (
+              <>
+                <dt className="text-muted-foreground">Last sign-in</dt>
+                <dd>{formatWhen(profile.lastLoginAt)}</dd>
+              </>
+            )}
+          </dl>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Passphrase</CardTitle>
-          <CardDescription>
-            Your recovery key stays the same when you change your passphrase.
-          </CardDescription>
+          <CardTitle>Picture</CardTitle>
+          <CardDescription>A WebP or JPEG up to 256 × 256 and 200 KB.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ChangePassphraseForm />
+          <AvatarUploader
+            user={{
+              id: profile.id,
+              username: profile.username,
+              displayName: profile.displayName,
+              color: profile.color,
+              hasAvatar: profile.hasAvatar,
+              avatarVersion: profile.avatarVersion,
+            }}
+          />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Auto-lock</CardTitle>
-          <CardDescription>{idleLockDescription()}</CardDescription>
+          <CardTitle>Profile</CardTitle>
+          <CardDescription>How you appear in the app and in shared spaces.</CardDescription>
         </CardHeader>
+        <CardContent>
+          <ProfileForm displayName={profile.displayName} color={profile.color} />
+        </CardContent>
       </Card>
     </div>
   );

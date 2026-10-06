@@ -2,14 +2,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-const requireUnlocked = vi.fn(async () => {});
+import type { RequestScope } from "@/modules/core/db/vault-types";
+
+const USER = "00000000-0000-4000-8000-000000000001";
+function makeScope(overrides: Partial<RequestScope> = {}): RequestScope {
+  return {
+    userId: USER,
+    role: "member",
+    sessionId: "sid-1",
+    vault: { kind: "user", id: USER },
+    spaceRole: null,
+    ...overrides,
+  };
+}
+
+const requireUnlocked = vi.fn(async () => makeScope());
+const requireAdminForAction = vi.fn(async () => makeScope({ role: "admin" }));
 const revalidatePath = vi.fn();
 
-vi.mock("@/modules/core/session/guard", () => ({ requireUnlocked }));
+vi.mock("@/modules/core/session/guard", () => ({
+  requireUserForAction: requireUnlocked,
+  requireAdminForAction,
+}));
 vi.mock("next/cache", () => ({ revalidatePath }));
 
-const { defineAction, defineFormAction, formDataToObject } = await import("./define-action");
+const {
+  defineAction,
+  defineAdminAction,
+  defineFormAction,
+  formDataToObject,
+  VIEWER_READ_ONLY_MESSAGE,
+} = await import("./define-action");
 const { DomainError } = await import("@/modules/core/errors");
+const { currentScope } = await import("@/modules/core/db/request-scope");
 
 function form(entries: [string, string | Blob][]): FormData {
   const data = new FormData();
@@ -19,6 +44,8 @@ function form(entries: [string, string | Blob][]): FormData {
 
 beforeEach(() => {
   requireUnlocked.mockClear();
+  requireUnlocked.mockImplementation(async () => makeScope());
+  requireAdminForAction.mockClear();
   revalidatePath.mockClear();
 });
 
@@ -171,5 +198,81 @@ describe("defineAction", () => {
     expect(await action({ id: 21 })).toEqual({ ok: true, data: 42 });
     expect((await action({ id: -1 })).fieldErrors?.id).toBeDefined();
     expect(requireUnlocked).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("request scope and space roles", () => {
+  const space = { kind: "space", id: "00000000-0000-4000-8000-0000000000aa" } as const;
+
+  it("runs the handler inside the caller's request scope and passes it in", async () => {
+    let seen: RequestScope | undefined;
+    let arg: RequestScope | undefined;
+    const action = defineAction(z.object({}), (_input, scope) => {
+      seen = currentScope();
+      arg = scope;
+    });
+    await action({});
+    expect(seen?.userId).toBe(USER);
+    expect(arg?.sessionId).toBe("sid-1");
+    expect(currentScope()).toBeUndefined();
+  });
+
+  it("refuses writes from a space viewer without running the handler", async () => {
+    requireUnlocked.mockImplementation(async () =>
+      makeScope({ vault: space, spaceRole: "viewer" }),
+    );
+    const handler = vi.fn();
+    const formAction = defineFormAction(schema, handler);
+    const state = await formAction(
+      {},
+      form([
+        ["name", "Rent"],
+        ["amount", "1"],
+      ]),
+    );
+    expect(state.error).toBe(VIEWER_READ_ONLY_MESSAGE);
+    expect(state.values).toEqual({ name: "Rent", amount: "1" });
+    expect((await defineAction(z.object({}), handler)({})).error).toBe(VIEWER_READ_ONLY_MESSAGE);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("lets viewers run read-only actions and editors write", async () => {
+    requireUnlocked.mockImplementation(async () =>
+      makeScope({ vault: space, spaceRole: "viewer" }),
+    );
+    expect(await defineAction(z.object({}), () => 1, { readOnly: true })({})).toEqual({
+      ok: true,
+      data: 1,
+    });
+    requireUnlocked.mockImplementation(async () =>
+      makeScope({ vault: space, spaceRole: "editor" }),
+    );
+    expect(await defineAction(z.object({}), () => 2)({})).toEqual({ ok: true, data: 2 });
+  });
+});
+
+describe("defineAdminAction", () => {
+  it("requires an admin and runs with no vault scope", async () => {
+    let seen: RequestScope | undefined = makeScope();
+    let actor: RequestScope | undefined;
+    const action = defineAdminAction(z.object({ id: z.string() }), (_input, scope) => {
+      seen = currentScope();
+      actor = scope;
+      return "done";
+    });
+    expect(await action({}, form([["id", "x"]]))).toEqual({ ok: true, data: "done" });
+    expect(requireAdminForAction).toHaveBeenCalledOnce();
+    expect(requireUnlocked).not.toHaveBeenCalled();
+    expect(seen).toBeUndefined();
+    expect(actor?.role).toBe("admin");
+  });
+
+  it("stops at the admin guard", async () => {
+    requireAdminForAction.mockRejectedValueOnce(new Error("NEXT_REDIRECT"));
+    const handler = vi.fn();
+    await expect(defineAdminAction(z.object({}), handler)({}, form([]))).rejects.toThrow(
+      "NEXT_REDIRECT",
+    );
+    expect(handler).not.toHaveBeenCalled();
   });
 });

@@ -111,6 +111,25 @@ describe("budgets service", () => {
     expect(result?.actualSpend).toBe(0);
   });
 
+  it("setting a budget again for the same category and effective date upserts instead of erroring, and the category is listed only once", () => {
+    const category = createCategory({ name: "Groceries", type: "expense" });
+
+    createBudget({ categoryId: category.id, monthlyLimit: 500, effectiveFrom: "2026-03-01" });
+    // Same (category, effectiveFrom) as above — would previously fail with a
+    // raw unique-constraint error (finance_budgets_category_effective_idx).
+    const updated = createBudget({
+      categoryId: category.id,
+      monthlyLimit: 700,
+      effectiveFrom: "2026-03-01",
+    });
+
+    expect(updated).toMatchObject({ categoryId: category.id, monthlyLimit: 700 });
+
+    const results = getBudgetsForMonth("2026-03").filter((r) => r.categoryName === "Groceries");
+    expect(results).toHaveLength(1);
+    expect(results[0].monthlyLimit).toBe(700);
+  });
+
   it("defaults to the current month when no month is given", () => {
     const category = createCategory({ name: "Groceries", type: "expense" });
     const now = new Date();

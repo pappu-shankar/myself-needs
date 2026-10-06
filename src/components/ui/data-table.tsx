@@ -34,6 +34,10 @@ interface DataTableProps<TData extends RowData> {
   emptyTitle: string;
   emptyDescription: string;
   emptyAction?: React.ReactNode;
+  /** Rendered below the table (e.g. Older/Newer keyset-pagination links) —
+   * omitted entirely for callers that don't pass it, so this is additive and
+   * doesn't change any existing caller's layout. */
+  footer?: React.ReactNode;
   className?: string;
 }
 
@@ -52,6 +56,7 @@ export function DataTable<TData extends RowData>({
   emptyTitle,
   emptyDescription,
   emptyAction,
+  footer,
   className,
 }: DataTableProps<TData>) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -69,13 +74,20 @@ export function DataTable<TData extends RowData>({
   });
 
   if (rows.length === 0) {
-    return (
+    const empty = (
       <EmptyState
         title={emptyTitle}
         description={emptyDescription}
         action={emptyAction}
-        className={className}
+        className={footer ? undefined : className}
       />
+    );
+    if (!footer) return empty;
+    return (
+      <div className={className}>
+        {empty}
+        {footer}
+      </div>
     );
   }
 
@@ -86,12 +98,12 @@ export function DataTable<TData extends RowData>({
       ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
       : 0;
 
-  return (
+  const tableElement = (
     <div
       ref={scrollRef}
       className={cn(
         "relative w-full overflow-auto rounded-xl bg-card ring-1 ring-foreground/10",
-        className,
+        footer ? undefined : className,
       )}
       style={{ maxHeight: ROW_HEIGHT_PX * MAX_VISIBLE_ROWS }}
     >
@@ -153,6 +165,14 @@ export function DataTable<TData extends RowData>({
           )}
         </TableBody>
       </Table>
+    </div>
+  );
+
+  if (!footer) return tableElement;
+  return (
+    <div className={className}>
+      {tableElement}
+      {footer}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { createTransaction } from "./transactions";
 import {
-  countLoggedForRule,
+  countLegacyLoggedForRule,
   getRecurringRuleById,
   insertRecurringRule,
+  listLoggedPeriodStartsForRule,
   listRecurringRules,
   type NewRecurringRule,
 } from "../../db/queries/domain/recurring";
@@ -10,7 +11,14 @@ import type { RecurringFrequency } from "../../types";
 import { todayIso } from "@/lib/dates";
 import { DomainError } from "@/modules/core/errors";
 
+function validateRecurringRule(entry: NewRecurringRule): void {
+  if (entry.type === "transfer" && entry.toAccountId === entry.accountId) {
+    throw new DomainError("A recurring transfer needs a different destination account.");
+  }
+}
+
 export function createRecurringRule(entry: NewRecurringRule) {
+  validateRecurringRule(entry);
   return insertRecurringRule(entry);
 }
 
@@ -92,12 +100,25 @@ export interface DueRecurringItem {
 
 /**
  * Rule-periods between each rule's start_date and today that don't yet have
- * a matching logged transaction — the oldest N periods for a rule are
- * considered "logged" once N real transactions have been confirmed against
- * it (via `recurring_rule_id`), regardless of the exact date the user picked
- * when confirming (they can edit it). No auto-logging, no notifications —
- * this is only surfaced when the finance section is open. See
- * docs/prd/finance/recurring-transactions.md.
+ * a matching logged transaction. Each confirmation tags its transaction with
+ * the exact `period_start` (YYYY-MM-DD) of the period it settles, so a
+ * period is "due" unless a transaction already carries that same
+ * `(recurring_rule_id, period_start)` pair — the unique index on that pair
+ * is what makes a double-submit/two-tabs confirm fail at the DB instead of
+ * silently marking a different (usually future) period as logged.
+ *
+ * Legacy fallback: transactions confirmed before the `period_start` column
+ * existed have `period_start = NULL`. The old confirm flow always settled
+ * the *oldest* unlogged period regardless of which date the user picked, so
+ * for each rule, `NULL`-period-start count identifies a contiguous prefix of
+ * the earliest N scheduled periods as already settled — that prefix is
+ * skipped here too, so nothing already logged before this feature shipped
+ * reappears as due. Periods beyond that legacy prefix are checked by exact
+ * `period_start` match instead, which also allows a later period to be
+ * confirmed before an earlier one without misfiring the count.
+ *
+ * No auto-logging, no notifications — this is only surfaced when the
+ * finance section is open. See docs/prd/finance/recurring-transactions.md.
  */
 export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
   const rules = listRecurringRules();
@@ -105,8 +126,12 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
 
   for (const rule of rules) {
     const periods = generatePeriodStarts(rule, today);
-    const loggedCount = countLoggedForRule(rule.id);
-    const due = periods.slice(loggedCount);
+    const legacyCount = countLegacyLoggedForRule(rule.id);
+    const loggedPeriods = new Set(listLoggedPeriodStartsForRule(rule.id));
+    const due = periods.filter((periodStart, index) => {
+      if (index < legacyCount) return false;
+      return !loggedPeriods.has(periodStart);
+    });
 
     const subject =
       rule.note ||
@@ -133,24 +158,59 @@ export function getDueWorklist(today = todayIso()): DueRecurringItem[] {
 
 export interface ConfirmRecurringInput {
   ruleId: number;
+  /** The due date (YYYY-MM-DD) of the period being settled — from the due worklist, not freely chosen; re-verified against it below. */
+  periodStart: string;
   amount: number;
   date: string;
   note: string | null;
 }
 
-/** Creates the real transaction for one confirmed due period, tagged so it counts against the rule going forward. */
+function isUniqueConstraintViolation(err: unknown): boolean {
+  for (let current = err; current instanceof Error; current = current.cause as Error | undefined) {
+    const code = (current as { code?: unknown }).code;
+    if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT_PRIMARYKEY") return true;
+  }
+  return false;
+}
+
+/**
+ * Creates the real transaction for one confirmed due period, tagged with the
+ * period it settles. The client sends which period it's confirming, but that's
+ * only ever a hint for the pre-filled form — this re-derives today's real due
+ * worklist and rejects anything not actually in it (already logged, or not
+ * due yet), so a stale form or a tampered request can't log a future period
+ * early or relog a settled one. The unique `(recurring_rule_id, period_start)`
+ * index is the final backstop against a race between two concurrent confirms
+ * of the same period (double submit, two tabs) — mapped to a friendly error
+ * instead of a raw constraint failure.
+ */
 export function confirmRecurringOccurrence(input: ConfirmRecurringInput) {
   const rule = getRecurringRuleById(input.ruleId);
   if (!rule) throw new DomainError("Recurring rule not found");
 
-  return createTransaction({
-    type: rule.type,
-    accountId: rule.accountId,
-    toAccountId: rule.toAccountId,
-    categoryId: rule.categoryId,
-    amount: input.amount,
-    date: input.date,
-    note: input.note,
-    recurringRuleId: rule.id,
-  });
+  const isDue = getDueWorklist().some(
+    (item) => item.ruleId === rule.id && item.periodStart === input.periodStart,
+  );
+  if (!isDue) {
+    throw new DomainError("This period is not due, or has already been logged.");
+  }
+
+  try {
+    return createTransaction({
+      type: rule.type,
+      accountId: rule.accountId,
+      toAccountId: rule.toAccountId,
+      categoryId: rule.categoryId,
+      amount: input.amount,
+      date: input.date,
+      note: input.note,
+      recurringRuleId: rule.id,
+      periodStart: input.periodStart,
+    });
+  } catch (err) {
+    if (isUniqueConstraintViolation(err)) {
+      throw new DomainError("This period has already been logged.");
+    }
+    throw err;
+  }
 }

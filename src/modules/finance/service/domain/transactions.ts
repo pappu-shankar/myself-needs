@@ -1,9 +1,10 @@
 import {
+  countTransactions,
   insertTransaction,
   listRecentTransactions,
-  listTransactionsPage,
+  listTransactionsByCursor,
   type NewTransaction,
-  type TransactionsPageFilters,
+  type TransactionsCursorPageParams,
 } from "../../db/queries/domain/transactions";
 import { getAccountByIdRow } from "../../db/queries/domain/accounts";
 import { getCategoryByIdRow } from "../../db/queries/domain/categories";
@@ -54,8 +55,13 @@ function validateTransaction(entry: NewTransaction): void {
   }
 }
 
-export function getTransactionsPage(page: number, filters?: TransactionsPageFilters) {
-  return listTransactionsPage(page, undefined, filters);
+export function getTransactionsPage(params: TransactionsCursorPageParams = {}, pageSize?: number) {
+  return listTransactionsByCursor(params, pageSize);
+}
+
+/** Whether any transaction has ever been logged — for "getting started" style checks. */
+export function getHasAnyTransactions() {
+  return hasAnyTransactions();
 }
 
 export function getRecentTransactions(limit = 5) {

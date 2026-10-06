@@ -8,7 +8,7 @@
 
 ## Rendering model
 
-Not "everything SSR" — Next.js App Router defaults every component to a **Server Component** (renders on the server, ships zero JS for that piece). Only components needing interactivity (forms, unlock screen, charts, animation) are `"use client"` — small, deliberate islands. Slow-to-load pieces (e.g. a chart aggregating years of data) are wrapped in `<Suspense>` with a `loading.tsx` skeleton, so Next.js streams the fast parts immediately.
+Not "everything SSR" — Next.js App Router defaults every component to a **Server Component** (renders on the server, ships zero JS for that piece). Only components needing interactivity (forms, sign-in screen, charts, animation) are `"use client"` — small, deliberate islands. Slow-to-load pieces (e.g. a chart aggregating years of data) are wrapped in `<Suspense>` with a `loading.tsx` skeleton, so Next.js streams the fast parts immediately.
 
 ## Memory/perf discipline
 

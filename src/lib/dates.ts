@@ -18,6 +18,19 @@ export function todayIso(): string {
   return toIsoDate(new Date());
 }
 
+/**
+ * Local wall-clock date-time `YYYY-MM-DDTHH:mm:ss` with no zone suffix — how
+ * timestamps the user reads back (a workout's start/finish, a set's
+ * completion) are stored. Same reason as `toIsoDate`: `toISOString()` is UTC.
+ */
+export function toLocalDateTime(date: Date): string {
+  return `${toIsoDate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export function nowLocalDateTime(): string {
+  return toLocalDateTime(new Date());
+}
+
 /** Local midnight of an ISO date. Throws on anything that isn't a real date. */
 export function parseIsoDate(iso: string): Date {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);

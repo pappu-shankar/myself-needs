@@ -72,7 +72,7 @@ export const WithTrailingIconPasswordToggle: Story = {
               <button
                 type="button"
                 onClick={() => setVisible((v) => !v)}
-                aria-label={visible ? "Hide passphrase" : "Show passphrase"}
+                aria-label={visible ? "Hide password" : "Show password"}
                 className="text-muted-foreground hover:text-foreground flex size-6 items-center justify-center"
               >
                 {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

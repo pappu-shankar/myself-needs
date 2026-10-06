@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getAccounts, getCategories, getRecurringRules, getDueWorklist } from "@/modules/finance";
 import { getGoals } from "@/modules/plans";
@@ -27,7 +27,7 @@ function formatAmount(amount: number) {
 }
 
 export default async function RecurringPage() {
-  await requireUnlocked();
+  await requireUser();
   const accounts = getAccounts();
   const categories = getCategories();
   const recurringRules = getRecurringRules();

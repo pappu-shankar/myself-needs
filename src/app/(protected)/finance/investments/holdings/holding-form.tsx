@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 import {
   addHoldingAction,
   type AddHoldingState,
@@ -11,6 +11,7 @@ import {
   ACCRUAL_TYPES,
   type InvestmentType,
 } from "@/modules/finance/types";
+import { useActionSuccess } from "@/lib/use-action-success";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField, FormFieldAction } from "@/components/ui/form-field";
@@ -42,11 +43,8 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
   const [state, formAction, isPending] = useActionState(addHoldingAction, initialState);
   const [type, setType] = useState<InvestmentType>("mutual_fund_domestic");
 
-  const wasPending = useRef(false);
-  useEffect(() => {
-    if (wasPending.current && !isPending && !state.error) onSuccess?.();
-    wasPending.current = isPending;
-  }, [isPending, state.error, onSuccess]);
+  useActionSuccess(state, () => onSuccess?.());
+  const fieldError = (name: string) => state.fieldErrors?.[name]?.[0];
 
   const isUnitPriced = UNIT_PRICED_TYPES.has(type);
   const isAccrual = ACCRUAL_TYPES.has(type);
@@ -69,7 +67,7 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
           ))}
         </select>
       </FormField>
-      <FormField label="Name" htmlFor="holdingName">
+      <FormField label="Name" htmlFor="holdingName" error={fieldError("name")}>
         <Input type="text" name="name" id="holdingName" required />
       </FormField>
       <FormField label="Account" htmlFor="holdingAccountId">
@@ -87,14 +85,19 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
       </FormField>
 
       {isUnitPriced && (
-        <FormField label="Units" htmlFor="units" hint="Optional">
-          <Input type="number" step="any" name="units" id="units" className="tabular-nums" />
-        </FormField>
+        <p className="text-muted-foreground text-sm sm:col-span-4">
+          Units come from your buys and sells: after adding the holding, record each purchase as a
+          contribution with its units.
+        </p>
       )}
 
       {isAccrual && (
         <>
-          <FormField label="Interest rate %" htmlFor="interestRate">
+          <FormField
+            label="Interest rate %"
+            htmlFor="interestRate"
+            error={fieldError("interestRate")}
+          >
             <Input
               type="number"
               step="any"
@@ -104,7 +107,12 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Maturity date" htmlFor="maturityDate" hint="Optional">
+          <FormField
+            label="Maturity date"
+            htmlFor="maturityDate"
+            hint="Interest stops accruing here"
+            error={fieldError("maturityDate")}
+          >
             <Input type="date" name="maturityDate" id="maturityDate" />
           </FormField>
         </>
@@ -131,8 +139,9 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
           label="AMFI scheme code"
           htmlFor="externalCode"
           hint="Enables the Refresh NAV button"
+          error={fieldError("externalCode")}
         >
-          <Input type="text" name="externalCode" id="externalCode" />
+          <Input type="text" inputMode="numeric" name="externalCode" id="externalCode" />
         </FormField>
       )}
 
@@ -176,7 +185,7 @@ export function HoldingForm({ accounts, schemeTemplates, goals, onSuccess }: Hol
         </Button>
       </FormFieldAction>
 
-      {state.error && (
+      {state.error && !state.fieldErrors && (
         <p role="alert" className="text-destructive text-sm sm:col-span-4">
           {state.error}
         </p>

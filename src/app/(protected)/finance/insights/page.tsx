@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getInsights, type Insight, type InsightCategory } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -54,7 +54,7 @@ function CategorySection({
 }
 
 export default async function InsightsPage() {
-  await requireUnlocked();
+  await requireUser();
   const insights = getInsights();
 
   const byCategory: Record<InsightCategory, Insight[]> = {

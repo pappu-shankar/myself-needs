@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
 import { createCategory } from "../../service/domain/categories";
 import { CATEGORY_TYPES } from "../../types";
 
@@ -16,28 +16,26 @@ export interface AddCategoryState {
   error?: string;
 }
 
-export async function addCategoryAction(
-  _prevState: AddCategoryState,
-  formData: FormData,
-): Promise<AddCategoryState> {
-  await requireUnlocked();
-  const parsed = categorySchema.safeParse({
-    name: formData.get("name"),
-    type: formData.get("type"),
-    parentCategoryId: formData.get("parentCategoryId") || undefined,
-  });
+export const addCategoryAction = defineFormAction(
+  async (_prevState: AddCategoryState, formData: FormData): Promise<AddCategoryState> => {
+    const parsed = categorySchema.safeParse({
+      name: formData.get("name"),
+      type: formData.get("type"),
+      parentCategoryId: formData.get("parentCategoryId") || undefined,
+    });
 
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid category" };
-  }
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid category" };
+    }
 
-  createCategory({
-    name: parsed.data.name,
-    type: parsed.data.type,
-    parentCategoryId: parsed.data.parentCategoryId ?? null,
-  });
+    createCategory({
+      name: parsed.data.name,
+      type: parsed.data.type,
+      parentCategoryId: parsed.data.parentCategoryId ?? null,
+    });
 
-  revalidatePath("/finance");
-  revalidatePath("/finance/categories");
-  return {};
-}
+    revalidatePath("/finance");
+    revalidatePath("/finance/categories");
+    return {};
+  },
+);

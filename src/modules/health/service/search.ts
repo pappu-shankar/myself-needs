@@ -1,5 +1,11 @@
 import type { SearchResult } from "@/types/search";
-import { searchMedicationsByName, searchMetricsByLabel } from "../db/queries/search";
+import {
+  searchExercisesByName,
+  searchMedicationsByName,
+  searchMetricsByLabel,
+  searchRoutinesByName,
+} from "../db/queries/search";
+import { ensureExerciseCatalog } from "./gym/catalog";
 
 export function searchHealth(query: string): SearchResult[] {
   const trimmed = query.trim();
@@ -21,5 +27,22 @@ export function searchHealth(query: string): SearchResult[] {
     href: "/health",
   }));
 
-  return [...metrics, ...medications];
+  ensureExerciseCatalog();
+  const exercises: SearchResult[] = searchExercisesByName(trimmed).map((e) => ({
+    type: "exercise",
+    id: e.id,
+    label: e.name,
+    subtitle: `${e.bodyPart} · ${e.equipment}`,
+    href: `/health/gym/library/${e.id}`,
+  }));
+
+  const routines: SearchResult[] = searchRoutinesByName(trimmed).map((r) => ({
+    type: "routine",
+    id: r.id,
+    label: r.name,
+    subtitle: "Gym routine",
+    href: `/health/gym/routines/${r.id}`,
+  }));
+
+  return [...metrics, ...medications, ...routines, ...exercises];
 }

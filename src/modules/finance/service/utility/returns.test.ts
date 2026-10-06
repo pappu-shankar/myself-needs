@@ -22,6 +22,9 @@ describe("returns service", () => {
     it("returns null for a non-positive start value or duration", () => {
       expect(computeCagr(0, 200, 1)).toBeNull();
       expect(computeCagr(100, 200, 0)).toBeNull();
+      expect(computeCagr(-100, 200, 1)).toBeNull();
+      expect(computeCagr(100, 0, 1)).toBeNull();
+      expect(computeCagr(100, -50, 2)).toBeNull();
     });
   });
 
@@ -70,6 +73,10 @@ describe("returns service", () => {
 
     it("returns null when there isn't enough data to solve", () => {
       expect(computeXirr([], 1000, "2024-01-01")).toBeNull();
+    });
+
+    it("returns null (not -100%) when there is no value to set against contributions", () => {
+      expect(computeXirr([{ amount: -1000, date: "2023-01-01" }], 0, "2024-01-01")).toBeNull();
     });
 
     it("returns null when every cash flow lands on the same day", () => {

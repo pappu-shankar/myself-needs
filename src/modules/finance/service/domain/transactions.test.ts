@@ -1,6 +1,11 @@
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
-import { createTransaction, getRecentTransactions, getTransactionsPage } from "./transactions";
+import {
+  createTransaction,
+  getHasAnyTransactions,
+  getRecentTransactions,
+  getTransactionsPage,
+} from "./transactions";
 import { createAccount } from "./accounts";
 import { createCategory } from "./categories";
 
@@ -86,11 +91,11 @@ describe("transactions service", () => {
       date: "2026-02-02",
     });
 
-    const page = getTransactionsPage(0);
+    const page = getTransactionsPage();
 
-    expect(page.total).toBe(2);
-    expect(page.page).toBe(0);
     expect(page.rows).toHaveLength(2);
+    expect(page.hasOlder).toBe(false);
+    expect(page.hasNewer).toBe(false);
 
     const transfer = page.rows.find((r) => r.type === "transfer");
     expect(transfer).toMatchObject({ accountName: "Checking", toAccountName: "Savings" });
@@ -99,7 +104,7 @@ describe("transactions service", () => {
     expect(expense).toMatchObject({ accountName: "Checking", categoryName: "Groceries" });
   });
 
-  it("orders a page newest-first by date then id, and paginates by 50 per page", () => {
+  it("orders the default page newest-first by date then id, and keyset-paginates by 50 per page", () => {
     const account = createAccount({ name: "Checking", type: "checking" });
     const category = createCategory({ name: "Misc", type: "expense" });
 
@@ -114,16 +119,63 @@ describe("transactions service", () => {
       });
     }
 
-    const firstPage = getTransactionsPage(0);
-    const secondPage = getTransactionsPage(1);
-
-    expect(firstPage.total).toBe(55);
+    const firstPage = getTransactionsPage();
     expect(firstPage.rows).toHaveLength(50);
-    expect(secondPage.rows).toHaveLength(5);
+    expect(firstPage.hasOlder).toBe(true);
+    expect(firstPage.hasNewer).toBe(false);
 
     const dates = firstPage.rows.map((r) => r.date);
-    const sortedDesc = [...dates].sort().reverse();
-    expect(dates).toEqual(sortedDesc);
+    expect(dates).toEqual([...dates].sort().reverse());
+
+    // "Older": cursor on the last row of page 1 fetches the remaining 5, and
+    // reports no further page.
+    const last = firstPage.rows[firstPage.rows.length - 1];
+    const secondPage = getTransactionsPage({ before: { date: last.date, id: last.id } });
+    expect(secondPage.rows).toHaveLength(5);
+    expect(secondPage.hasOlder).toBe(false);
+    expect(secondPage.hasNewer).toBe(true);
+    // No overlap and no gap between the two pages.
+    const firstPageIds = new Set(firstPage.rows.map((r) => r.id));
+    expect(secondPage.rows.every((r) => !firstPageIds.has(r.id))).toBe(true);
+
+    // "Newer": cursor on the first row of page 2 walks back to exactly page 1.
+    const secondPageFirst = secondPage.rows[0];
+    const backToFirstPage = getTransactionsPage({
+      after: { date: secondPageFirst.date, id: secondPageFirst.id },
+    });
+    expect(backToFirstPage.rows.map((r) => r.id)).toEqual(firstPage.rows.map((r) => r.id));
+    expect(backToFirstPage.hasNewer).toBe(false);
+    expect(backToFirstPage.hasOlder).toBe(true);
+  });
+
+  it("breaks ties on the same date by id, and cursor pagination doesn't skip or duplicate same-date rows", () => {
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Misc", type: "expense" });
+
+    // All on the same date — id descending is the only thing that can order them.
+    const created = Array.from({ length: 5 }, (_, i) =>
+      createTransaction({
+        type: "expense",
+        accountId: account.id,
+        categoryId: category.id,
+        amount: i + 1,
+        date: "2026-05-01",
+      }),
+    );
+
+    const firstPage = getTransactionsPage({}, 3);
+    expect(firstPage.rows.map((r) => r.id)).toEqual(
+      [...created].map((t) => t.id).sort((a, b) => b - a).slice(0, 3),
+    );
+    expect(firstPage.hasOlder).toBe(true);
+
+    const last = firstPage.rows[firstPage.rows.length - 1];
+    const secondPage = getTransactionsPage({ before: { date: last.date, id: last.id } }, 3);
+    expect(secondPage.rows).toHaveLength(2);
+    expect(secondPage.hasOlder).toBe(false);
+
+    const allIds = [...firstPage.rows, ...secondPage.rows].map((r) => r.id).sort((a, b) => a - b);
+    expect(allIds).toEqual(created.map((t) => t.id).sort((a, b) => a - b));
   });
 
   it("filters a page to just one account's transactions, matching either side of a transfer", () => {
@@ -155,8 +207,7 @@ describe("transactions service", () => {
       date: "2026-02-03",
     });
 
-    const savingsPage = getTransactionsPage(0, { accountId: savings.id });
-    expect(savingsPage.total).toBe(1);
+    const savingsPage = getTransactionsPage({ accountId: savings.id });
     expect(savingsPage.rows).toHaveLength(1);
     expect(savingsPage.rows[0]).toMatchObject({
       type: "transfer",
@@ -164,8 +215,8 @@ describe("transactions service", () => {
       toAccountName: "Savings",
     });
 
-    const dadPage = getTransactionsPage(0, { accountId: dad.id });
-    expect(dadPage.total).toBe(1);
+    const dadPage = getTransactionsPage({ accountId: dad.id });
+    expect(dadPage.rows).toHaveLength(1);
     expect(dadPage.rows[0]).toMatchObject({ accountName: "Accounts receivable — Dad" });
   });
 
@@ -188,5 +239,21 @@ describe("transactions service", () => {
 
     const mostRecent = getRecentTransactions(1)[0];
     expect(mostRecent).toMatchObject({ date: "2026-01-07", amount: 7 });
+  });
+
+  it("getHasAnyTransactions reflects whether anything has ever been logged", () => {
+    expect(getHasAnyTransactions()).toBe(false);
+
+    const account = createAccount({ name: "Checking", type: "checking" });
+    const category = createCategory({ name: "Misc", type: "expense" });
+    createTransaction({
+      type: "expense",
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 1,
+      date: "2026-01-01",
+    });
+
+    expect(getHasAnyTransactions()).toBe(true);
   });
 });

@@ -10,8 +10,10 @@ System design index. This file is a table of contents only — detail lives one-
 |---|---|
 | Layering, module boundaries, cross-module references | [docs/architecture/system-design.md](./docs/architecture/system-design.md) |
 | Data model conventions (schema/queries structure, migrations, indexing) | [docs/architecture/data-model.md](./docs/architecture/data-model.md) |
-| Security (unlock flow, encryption at rest, localhost binding) | [docs/architecture/security.md](./docs/architecture/security.md) |
+| Security (threat model, per-user vaults and shared spaces, sign-in and sessions, edge hardening) | [docs/architecture/security.md](./docs/architecture/security.md) |
 | Rendering, theming & performance | [docs/architecture/performance.md](./docs/architecture/performance.md) |
+| Pinned multi-user interfaces (vaults, request scope, registry, guards) | [docs/architecture/multi-user-contracts.md](./docs/architecture/multi-user-contracts.md) |
+| Deploying (Docker, Caddy, env vars, backups) | [docs/deploy.md](./docs/deploy.md) |
 | Working with AI coding agents on this repo | [docs/architecture/ai-agents.md](./docs/architecture/ai-agents.md) |
 
 ## Tech stack at a glance
@@ -22,7 +24,7 @@ System design index. This file is a table of contents only — detail lives one-
 | Framework | Next.js (App Router) |
 | Styling/UI | Tailwind CSS + shadcn/ui (Base UI primitives) |
 | Charts | Recharts |
-| Database | SQLite via `better-sqlite3-multiple-ciphers` (encrypted at rest) |
+| Database | SQLite via `better-sqlite3-multiple-ciphers` (one encrypted vault per user and per shared space; plaintext account registry in `accounts.db`) |
 | ORM | Drizzle ORM + drizzle-kit |
 | Validation | Zod |
 | Tables | TanStack Table + TanStack Virtual (server data arrives via Server Components; no client data-fetching library) |

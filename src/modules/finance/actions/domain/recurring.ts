@@ -1,23 +1,27 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
+import type { ActionState } from "@/modules/core/action/types";
+import { zId, zIsoDate, zOptionalText, zPositiveAmount } from "@/lib/validation";
 import { confirmRecurringOccurrence, createRecurringRule } from "../../service/domain/recurring";
 import { TRANSACTION_TYPES, RECURRING_FREQUENCIES } from "../../types";
 
+export type AddRecurringRuleState = ActionState;
+export type ConfirmRecurringState = ActionState;
+
 const recurringRuleSchema = z
   .object({
-    type: z.enum(TRANSACTION_TYPES),
-    accountId: z.coerce.number().int(),
-    toAccountId: z.coerce.number().int().optional(),
-    categoryId: z.coerce.number().int().optional(),
-    amount: z.coerce.number().positive("Amount must be greater than 0"),
-    frequency: z.enum(RECURRING_FREQUENCIES),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().optional(),
-    note: z.string().optional(),
-    linkedGoalId: z.coerce.number().int().optional(),
+    type: z.enum(TRANSACTION_TYPES, { error: "Pick a transaction type" }),
+    accountId: zId,
+    toAccountId: zId.optional(),
+    categoryId: zId.optional(),
+    amount: zPositiveAmount,
+    frequency: z.enum(RECURRING_FREQUENCIES, { error: "Pick a frequency" }),
+    startDate: zIsoDate,
+    endDate: zIsoDate.optional(),
+    note: zOptionalText(),
+    linkedGoalId: zId.optional(),
   })
   .refine((data) => data.type !== "transfer" || data.toAccountId !== undefined, {
     message: "Destination account is required for transfers",
@@ -26,88 +30,53 @@ const recurringRuleSchema = z
   .refine((data) => data.type === "transfer" || data.categoryId !== undefined, {
     message: "Category is required",
     path: ["categoryId"],
+  })
+  .refine((data) => data.type !== "transfer" || data.accountId !== data.toAccountId, {
+    message: "Source and destination accounts must be different",
+    path: ["toAccountId"],
   });
 
-export interface AddRecurringRuleState {
-  error?: string;
-}
+export const addRecurringRuleAction = defineFormAction(
+  recurringRuleSchema,
+  (input) => {
+    createRecurringRule({
+      type: input.type,
+      accountId: input.accountId,
+      toAccountId: input.type === "transfer" ? (input.toAccountId ?? null) : null,
+      categoryId: input.type === "transfer" ? null : (input.categoryId ?? null),
+      amount: input.amount,
+      frequency: input.frequency,
+      startDate: input.startDate,
+      endDate: input.endDate ?? null,
+      note: input.note ?? null,
+      linkedGoalId: input.linkedGoalId ?? null,
+    });
+  },
+  { name: "finance:add-recurring-rule" },
+);
 
-export async function addRecurringRuleAction(
-  _prevState: AddRecurringRuleState,
-  formData: FormData,
-): Promise<AddRecurringRuleState> {
-  await requireUnlocked();
-  const parsed = recurringRuleSchema.safeParse({
-    type: formData.get("type"),
-    accountId: formData.get("accountId"),
-    toAccountId: formData.get("toAccountId") || undefined,
-    categoryId: formData.get("categoryId") || undefined,
-    amount: formData.get("amount"),
-    frequency: formData.get("frequency"),
-    startDate: formData.get("startDate"),
-    endDate: formData.get("endDate") || undefined,
-    note: formData.get("note") || undefined,
-    linkedGoalId: formData.get("linkedGoalId") || undefined,
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid recurring rule" };
-  }
-
-  createRecurringRule({
-    type: parsed.data.type,
-    accountId: parsed.data.accountId,
-    toAccountId: parsed.data.type === "transfer" ? (parsed.data.toAccountId ?? null) : null,
-    categoryId: parsed.data.type === "transfer" ? null : (parsed.data.categoryId ?? null),
-    amount: parsed.data.amount,
-    frequency: parsed.data.frequency,
-    startDate: parsed.data.startDate,
-    endDate: parsed.data.endDate ?? null,
-    note: parsed.data.note ?? null,
-    linkedGoalId: parsed.data.linkedGoalId ?? null,
-  });
-
-  revalidatePath("/finance");
-  revalidatePath("/finance/recurring");
-  return {};
-}
-
-const confirmSchema = z.object({
-  ruleId: z.coerce.number().int(),
-  amount: z.coerce.number().positive("Amount must be greater than 0"),
-  date: z.string().min(1, "Date is required"),
-  note: z.string().optional(),
-});
-
-export interface ConfirmRecurringState {
-  error?: string;
-}
-
-export async function confirmRecurringAction(
-  _prevState: ConfirmRecurringState,
-  formData: FormData,
-): Promise<ConfirmRecurringState> {
-  await requireUnlocked();
-  const parsed = confirmSchema.safeParse({
-    ruleId: formData.get("ruleId"),
-    amount: formData.get("amount"),
-    date: formData.get("date"),
-    note: formData.get("note") || undefined,
-  });
-
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid entry" };
-  }
-
-  confirmRecurringOccurrence({
-    ruleId: parsed.data.ruleId,
-    amount: parsed.data.amount,
-    date: parsed.data.date,
-    note: parsed.data.note ?? null,
-  });
-
-  revalidatePath("/finance");
-  revalidatePath("/finance/recurring");
-  revalidatePath("/dashboard");
-  return {};
-}
+/**
+ * `periodStart` is the due date the confirm form was pre-filled from (see
+ * `DueWorklist`) — the service re-derives the live due worklist and rejects
+ * anything not actually due before trusting it. See
+ * `confirmRecurringOccurrence`.
+ */
+export const confirmRecurringAction = defineFormAction(
+  z.object({
+    ruleId: zId,
+    periodStart: zIsoDate,
+    amount: zPositiveAmount,
+    date: zIsoDate,
+    note: zOptionalText(),
+  }),
+  (input) => {
+    confirmRecurringOccurrence({
+      ruleId: input.ruleId,
+      periodStart: input.periodStart,
+      amount: input.amount,
+      date: input.date,
+      note: input.note ?? null,
+    });
+  },
+  { name: "finance:confirm-recurring" },
+);

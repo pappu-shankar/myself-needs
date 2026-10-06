@@ -6,17 +6,19 @@ import { searchMental } from "@/modules/mental";
 import { searchPlans } from "@/modules/plans";
 import { searchHouse } from "@/modules/house";
 import type { SearchResult } from "@/types/search";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { withUser } from "@/modules/core/session/guard";
 
+/** Read-only, so space viewers may search too. */
 export async function searchAction(query: string): Promise<SearchResult[]> {
-  await requireUnlocked();
-  if (!query.trim()) return [];
+  return await withUser(() => {
+    if (!query.trim()) return [];
 
-  return [
-    ...searchFinance(query),
-    ...searchHealth(query),
-    ...searchMental(query),
-    ...searchPlans(query),
-    ...searchHouse(query),
-  ];
+    return [
+      ...searchFinance(query),
+      ...searchHealth(query),
+      ...searchMental(query),
+      ...searchPlans(query),
+      ...searchHouse(query),
+    ];
+  });
 }

@@ -1,18 +1,16 @@
 "use client";
 
 import { useActionState } from "react";
-import {
-  updateTaxSettingsAction,
-  type UpdateTaxSettingsState,
-} from "@/modules/finance/actions/config/tax";
-import type { getTaxSettingsView } from "@/modules/finance";
+import { updateTaxSettingsAction } from "@/modules/finance/actions/config/tax";
+import type { getTaxPolicyView } from "@/modules/finance";
+import type { ActionState } from "@/modules/core/action/types";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
 import { Button } from "@/components/ui/button";
 
-type TaxSettings = ReturnType<typeof getTaxSettingsView>;
+type TaxSettings = ReturnType<typeof getTaxPolicyView>["settings"];
 
-const initialState: UpdateTaxSettingsState = {};
+const initialState: ActionState = {};
 
 function NumberField({
   label,
@@ -22,7 +20,7 @@ function NumberField({
 }: {
   label: string;
   name: keyof TaxSettings;
-  defaultValue: number;
+  defaultValue: number | string;
   hint?: string;
 }) {
   return (
@@ -39,13 +37,26 @@ function NumberField({
   );
 }
 
-export function TaxSettingsForm({ settings }: { settings: TaxSettings }) {
+/** One FY's settings. `editable` is false when the FY has no row of its own (the values shown are inherited from an earlier FY). */
+export function TaxSettingsForm({
+  fiscalYear,
+  settings,
+  editable,
+}: {
+  fiscalYear: string;
+  settings: TaxSettings;
+  editable: boolean;
+}) {
   const [state, formAction, isPending] = useActionState(updateTaxSettingsAction, initialState);
+  // After a failed save React resets the form, so refill it with what was submitted.
+  const valueOf = (name: keyof TaxSettings) => state.values?.[name] ?? Number(settings[name]);
   // Keyed by the displayed values (not `updatedAt`, whose second-level SQLite
   // resolution can repeat across two saves in the same second) so an
   // uncontrolled input's defaultValue is guaranteed to remount whenever the
-  // saved data actually changes.
+  // saved data actually changes — or a failed save echoes values back.
   const formKey = [
+    state.error ? JSON.stringify(state.values) : "",
+    fiscalYear,
     settings.eightyCLimit,
     settings.eightyDLimit,
     settings.equityLtcgThresholdMonths,
@@ -68,72 +79,80 @@ export function TaxSettingsForm({ settings }: { settings: TaxSettings }) {
       action={formAction}
       className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4"
     >
-      <NumberField label="80C limit" name="eightyCLimit" defaultValue={settings.eightyCLimit} />
-      <NumberField label="80D limit" name="eightyDLimit" defaultValue={settings.eightyDLimit} />
-      <NumberField
-        label="Equity LTCG threshold (months)"
-        name="equityLtcgThresholdMonths"
-        defaultValue={settings.equityLtcgThresholdMonths}
-      />
-      <NumberField
-        label="Equity LTCG exemption"
-        name="equityLtcgExemption"
-        defaultValue={settings.equityLtcgExemption}
-      />
-      <NumberField
-        label="Equity LTCG rate %"
-        name="equityLtcgRate"
-        defaultValue={settings.equityLtcgRate}
-      />
-      <NumberField
-        label="Equity STCG rate %"
-        name="equityStcgRate"
-        defaultValue={settings.equityStcgRate}
-      />
-      <NumberField
-        label="Other LTCG threshold (months)"
-        name="otherLtcgThresholdMonths"
-        defaultValue={settings.otherLtcgThresholdMonths}
-        hint="Non-equity holdings — debt, gold, and the rest"
-      />
-      <NumberField
-        label="Other LTCG rate %"
-        name="otherLtcgRate"
-        defaultValue={settings.otherLtcgRate}
-      />
-      <NumberField
-        label="Other STCG rate %"
-        name="otherStcgRate"
-        defaultValue={settings.otherStcgRate}
-      />
-      <NumberField
-        label="Standard deduction (old)"
-        name="standardDeductionOld"
-        defaultValue={settings.standardDeductionOld}
-      />
-      <NumberField
-        label="Standard deduction (new)"
-        name="standardDeductionNew"
-        defaultValue={settings.standardDeductionNew}
-      />
-      <NumberField label="Cess %" name="cessPercent" defaultValue={settings.cessPercent} />
-      <NumberField
-        label="87A rebate threshold (old)"
-        name="rebate87aThresholdOld"
-        defaultValue={settings.rebate87aThresholdOld}
-        hint="Section 87A — taxable income at or below this owes zero tax"
-      />
-      <NumberField
-        label="87A rebate threshold (new)"
-        name="rebate87aThresholdNew"
-        defaultValue={settings.rebate87aThresholdNew}
-        hint="Section 87A — taxable income at or below this owes zero tax"
-      />
-      <div className="flex flex-col justify-end gap-1.5">
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Saving…" : "Save settings"}
-        </Button>
-      </div>
+      <input type="hidden" name="fiscalYear" value={fiscalYear} />
+      <fieldset disabled={!editable} className="contents">
+        <NumberField label="80C limit" name="eightyCLimit" defaultValue={valueOf("eightyCLimit")} />
+        <NumberField label="80D limit" name="eightyDLimit" defaultValue={valueOf("eightyDLimit")} />
+        <NumberField
+          label="Equity LTCG threshold (months)"
+          name="equityLtcgThresholdMonths"
+          defaultValue={valueOf("equityLtcgThresholdMonths")}
+        />
+        <NumberField
+          label="Equity LTCG exemption"
+          name="equityLtcgExemption"
+          defaultValue={valueOf("equityLtcgExemption")}
+        />
+        <NumberField
+          label="Equity LTCG rate %"
+          name="equityLtcgRate"
+          defaultValue={valueOf("equityLtcgRate")}
+        />
+        <NumberField
+          label="Equity STCG rate %"
+          name="equityStcgRate"
+          defaultValue={valueOf("equityStcgRate")}
+        />
+        <NumberField
+          label="Other LTCG threshold (months)"
+          name="otherLtcgThresholdMonths"
+          defaultValue={valueOf("otherLtcgThresholdMonths")}
+          hint="Non-equity holdings — debt, gold, and the rest"
+        />
+        <NumberField
+          label="Other LTCG rate %"
+          name="otherLtcgRate"
+          defaultValue={valueOf("otherLtcgRate")}
+        />
+        <NumberField
+          label="Other STCG rate %"
+          name="otherStcgRate"
+          defaultValue={valueOf("otherStcgRate")}
+        />
+        <NumberField
+          label="Standard deduction (old)"
+          name="standardDeductionOld"
+          defaultValue={valueOf("standardDeductionOld")}
+        />
+        <NumberField
+          label="Standard deduction (new)"
+          name="standardDeductionNew"
+          defaultValue={valueOf("standardDeductionNew")}
+        />
+        <NumberField label="Cess %" name="cessPercent" defaultValue={valueOf("cessPercent")} />
+        <NumberField
+          label="87A rebate threshold (old)"
+          name="rebate87aThresholdOld"
+          defaultValue={valueOf("rebate87aThresholdOld")}
+          hint="Section 87A — taxable income at or below this owes zero tax"
+        />
+        <NumberField
+          label="87A rebate threshold (new)"
+          name="rebate87aThresholdNew"
+          defaultValue={valueOf("rebate87aThresholdNew")}
+          hint="Section 87A — taxable income at or below this owes zero tax"
+        />
+        <div className="flex flex-col justify-end gap-1.5">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Saving…" : `Save FY ${fiscalYear}`}
+          </Button>
+        </div>
+      </fieldset>
+      {state.ok && (
+        <p role="status" className="text-sm sm:col-span-3 lg:col-span-4">
+          Saved FY {fiscalYear} settings.
+        </p>
+      )}
       {state.error && (
         <p role="alert" className="text-destructive text-sm sm:col-span-3 lg:col-span-4">
           {state.error}

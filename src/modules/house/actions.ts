@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
 import { createProject, updateProject } from "./service/projects";
 import { createFloor, updateFloor } from "./service/floors";
 import { createRoom, updateRoom } from "./service/rooms";
@@ -47,46 +47,42 @@ function parseProjectForm(formData: FormData) {
   });
 }
 
-export async function addProjectAction(
-  _prevState: AddProjectState,
-  formData: FormData,
-): Promise<AddProjectState> {
-  await requireUnlocked();
-  const parsed = parseProjectForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid project" };
+export const addProjectAction = defineFormAction(
+  async (_prevState: AddProjectState, formData: FormData): Promise<AddProjectState> => {
+    const parsed = parseProjectForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid project" };
 
-  createProject({
-    name: parsed.data.name,
-    notes: parsed.data.notes ?? null,
-    roofType: parsed.data.roofType,
-    roofPitchDegrees: parsed.data.roofPitchDegrees ?? null,
-  });
+    createProject({
+      name: parsed.data.name,
+      notes: parsed.data.notes ?? null,
+      roofType: parsed.data.roofType,
+      roofPitchDegrees: parsed.data.roofPitchDegrees ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateProjectAction(
-  _prevState: AddProjectState,
-  formData: FormData,
-): Promise<AddProjectState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid project" };
+export const updateProjectAction = defineFormAction(
+  async (_prevState: AddProjectState, formData: FormData): Promise<AddProjectState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid project" };
 
-  const parsed = parseProjectForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid project" };
+    const parsed = parseProjectForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid project" };
 
-  updateProject(id, {
-    name: parsed.data.name,
-    notes: parsed.data.notes ?? null,
-    roofType: parsed.data.roofType,
-    roofPitchDegrees: parsed.data.roofPitchDegrees ?? null,
-  });
+    updateProject(id, {
+      name: parsed.data.name,
+      notes: parsed.data.notes ?? null,
+      roofType: parsed.data.roofType,
+      roofPitchDegrees: parsed.data.roofPitchDegrees ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const floorSchema = z.object({
   projectId: z.coerce.number().int(),
@@ -108,34 +104,30 @@ function parseFloorForm(formData: FormData) {
   });
 }
 
-export async function addFloorAction(
-  _prevState: AddFloorState,
-  formData: FormData,
-): Promise<AddFloorState> {
-  await requireUnlocked();
-  const parsed = parseFloorForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid floor" };
+export const addFloorAction = defineFormAction(
+  async (_prevState: AddFloorState, formData: FormData): Promise<AddFloorState> => {
+    const parsed = parseFloorForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid floor" };
 
-  createFloor(parsed.data);
-  revalidatePath("/house");
-  return {};
-}
+    createFloor(parsed.data);
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateFloorAction(
-  _prevState: AddFloorState,
-  formData: FormData,
-): Promise<AddFloorState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid floor" };
+export const updateFloorAction = defineFormAction(
+  async (_prevState: AddFloorState, formData: FormData): Promise<AddFloorState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid floor" };
 
-  const parsed = parseFloorForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid floor" };
+    const parsed = parseFloorForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid floor" };
 
-  updateFloor(id, parsed.data);
-  revalidatePath("/house");
-  return {};
-}
+    updateFloor(id, parsed.data);
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const roomSchema = z.object({
   floorId: z.coerce.number().int(),
@@ -173,60 +165,56 @@ function parseRoomForm(formData: FormData) {
   });
 }
 
-export async function addRoomAction(
-  _prevState: AddRoomState,
-  formData: FormData,
-): Promise<AddRoomState> {
-  await requireUnlocked();
-  const parsed = parseRoomForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid room" };
+export const addRoomAction = defineFormAction(
+  async (_prevState: AddRoomState, formData: FormData): Promise<AddRoomState> => {
+    const parsed = parseRoomForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid room" };
 
-  const created = createRoom({
-    floorId: parsed.data.floorId,
-    name: parsed.data.name,
-    type: parsed.data.type,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    depth: parsed.data.depth,
-    wallHeight: parsed.data.wallHeight ?? null,
-    color: parsed.data.color ?? null,
-    material: parsed.data.material ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    const created = createRoom({
+      floorId: parsed.data.floorId,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      depth: parsed.data.depth,
+      wallHeight: parsed.data.wallHeight ?? null,
+      color: parsed.data.color ?? null,
+      material: parsed.data.material ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return { id: created.id };
-}
+    revalidatePath("/house");
+    return { id: created.id };
+  },
+);
 
-export async function updateRoomAction(
-  _prevState: AddRoomState,
-  formData: FormData,
-): Promise<AddRoomState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid room" };
+export const updateRoomAction = defineFormAction(
+  async (_prevState: AddRoomState, formData: FormData): Promise<AddRoomState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid room" };
 
-  const parsed = parseRoomForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid room" };
+    const parsed = parseRoomForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid room" };
 
-  updateRoom(id, {
-    floorId: parsed.data.floorId,
-    name: parsed.data.name,
-    type: parsed.data.type,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    depth: parsed.data.depth,
-    wallHeight: parsed.data.wallHeight ?? null,
-    color: parsed.data.color ?? null,
-    material: parsed.data.material ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateRoom(id, {
+      floorId: parsed.data.floorId,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      depth: parsed.data.depth,
+      wallHeight: parsed.data.wallHeight ?? null,
+      color: parsed.data.color ?? null,
+      material: parsed.data.material ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const openingSchema = z
   .object({
@@ -271,56 +259,52 @@ function parseOpeningForm(formData: FormData) {
   });
 }
 
-export async function addOpeningAction(
-  _prevState: AddOpeningState,
-  formData: FormData,
-): Promise<AddOpeningState> {
-  await requireUnlocked();
-  const parsed = parseOpeningForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid opening" };
+export const addOpeningAction = defineFormAction(
+  async (_prevState: AddOpeningState, formData: FormData): Promise<AddOpeningState> => {
+    const parsed = parseOpeningForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid opening" };
 
-  createOpening({
-    roomId: parsed.data.roomId,
-    wall: parsed.data.wall,
-    type: parsed.data.type,
-    style: parsed.data.style ?? null,
-    offset: parsed.data.offset,
-    width: parsed.data.width,
-    height: parsed.data.height ?? null,
-    sillHeight: parsed.data.sillHeight ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    createOpening({
+      roomId: parsed.data.roomId,
+      wall: parsed.data.wall,
+      type: parsed.data.type,
+      style: parsed.data.style ?? null,
+      offset: parsed.data.offset,
+      width: parsed.data.width,
+      height: parsed.data.height ?? null,
+      sillHeight: parsed.data.sillHeight ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateOpeningAction(
-  _prevState: AddOpeningState,
-  formData: FormData,
-): Promise<AddOpeningState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid opening" };
+export const updateOpeningAction = defineFormAction(
+  async (_prevState: AddOpeningState, formData: FormData): Promise<AddOpeningState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid opening" };
 
-  const parsed = parseOpeningForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid opening" };
+    const parsed = parseOpeningForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid opening" };
 
-  updateOpening(id, {
-    roomId: parsed.data.roomId,
-    wall: parsed.data.wall,
-    type: parsed.data.type,
-    style: parsed.data.style ?? null,
-    offset: parsed.data.offset,
-    width: parsed.data.width,
-    height: parsed.data.height ?? null,
-    sillHeight: parsed.data.sillHeight ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateOpening(id, {
+      roomId: parsed.data.roomId,
+      wall: parsed.data.wall,
+      type: parsed.data.type,
+      style: parsed.data.style ?? null,
+      offset: parsed.data.offset,
+      width: parsed.data.width,
+      height: parsed.data.height ?? null,
+      sillHeight: parsed.data.sillHeight ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const stairSchema = z.object({
   projectId: z.coerce.number().int(),
@@ -358,62 +342,58 @@ function parseStairForm(formData: FormData) {
   });
 }
 
-export async function addStairAction(
-  _prevState: AddStairState,
-  formData: FormData,
-): Promise<AddStairState> {
-  await requireUnlocked();
-  const parsed = parseStairForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid stair" };
+export const addStairAction = defineFormAction(
+  async (_prevState: AddStairState, formData: FormData): Promise<AddStairState> => {
+    const parsed = parseStairForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid stair" };
 
-  createStair({
-    projectId: parsed.data.projectId,
-    fromFloorId: parsed.data.fromFloorId,
-    toFloorId: parsed.data.toFloorId,
-    name: parsed.data.name,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    run: parsed.data.run,
-    rotationDegrees: parsed.data.rotationDegrees ?? 0,
-    railingSide: parsed.data.railingSide ?? "both",
-    railingHeight: parsed.data.railingHeight ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    createStair({
+      projectId: parsed.data.projectId,
+      fromFloorId: parsed.data.fromFloorId,
+      toFloorId: parsed.data.toFloorId,
+      name: parsed.data.name,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      run: parsed.data.run,
+      rotationDegrees: parsed.data.rotationDegrees ?? 0,
+      railingSide: parsed.data.railingSide ?? "both",
+      railingHeight: parsed.data.railingHeight ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateStairAction(
-  _prevState: AddStairState,
-  formData: FormData,
-): Promise<AddStairState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid stair" };
+export const updateStairAction = defineFormAction(
+  async (_prevState: AddStairState, formData: FormData): Promise<AddStairState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid stair" };
 
-  const parsed = parseStairForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid stair" };
+    const parsed = parseStairForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid stair" };
 
-  updateStair(id, {
-    projectId: parsed.data.projectId,
-    fromFloorId: parsed.data.fromFloorId,
-    toFloorId: parsed.data.toFloorId,
-    name: parsed.data.name,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    run: parsed.data.run,
-    rotationDegrees: parsed.data.rotationDegrees ?? 0,
-    railingSide: parsed.data.railingSide ?? "both",
-    railingHeight: parsed.data.railingHeight ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateStair(id, {
+      projectId: parsed.data.projectId,
+      fromFloorId: parsed.data.fromFloorId,
+      toFloorId: parsed.data.toFloorId,
+      name: parsed.data.name,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      run: parsed.data.run,
+      rotationDegrees: parsed.data.rotationDegrees ?? 0,
+      railingSide: parsed.data.railingSide ?? "both",
+      railingHeight: parsed.data.railingHeight ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const fixtureSchema = z.object({
   floorId: z.coerce.number().int(),
@@ -439,50 +419,46 @@ function parseFixtureForm(formData: FormData) {
   });
 }
 
-export async function addFixtureAction(
-  _prevState: AddFixtureState,
-  formData: FormData,
-): Promise<AddFixtureState> {
-  await requireUnlocked();
-  const parsed = parseFixtureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid fixture" };
+export const addFixtureAction = defineFormAction(
+  async (_prevState: AddFixtureState, formData: FormData): Promise<AddFixtureState> => {
+    const parsed = parseFixtureForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid fixture" };
 
-  createFixture({
-    floorId: parsed.data.floorId,
-    name: parsed.data.name,
-    category: parsed.data.category,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    notes: parsed.data.notes ?? null,
-  });
+    createFixture({
+      floorId: parsed.data.floorId,
+      name: parsed.data.name,
+      category: parsed.data.category,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateFixtureAction(
-  _prevState: AddFixtureState,
-  formData: FormData,
-): Promise<AddFixtureState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid fixture" };
+export const updateFixtureAction = defineFormAction(
+  async (_prevState: AddFixtureState, formData: FormData): Promise<AddFixtureState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid fixture" };
 
-  const parsed = parseFixtureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid fixture" };
+    const parsed = parseFixtureForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid fixture" };
 
-  updateFixture(id, {
-    floorId: parsed.data.floorId,
-    name: parsed.data.name,
-    category: parsed.data.category,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    notes: parsed.data.notes ?? null,
-  });
+    updateFixture(id, {
+      floorId: parsed.data.floorId,
+      name: parsed.data.name,
+      category: parsed.data.category,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const wallStyleSchema = z.object({
   roomId: z.coerce.number().int(),
@@ -508,50 +484,46 @@ function parseWallStyleForm(formData: FormData) {
   });
 }
 
-export async function addWallStyleAction(
-  _prevState: AddWallStyleState,
-  formData: FormData,
-): Promise<AddWallStyleState> {
-  await requireUnlocked();
-  const parsed = parseWallStyleForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid wall style" };
+export const addWallStyleAction = defineFormAction(
+  async (_prevState: AddWallStyleState, formData: FormData): Promise<AddWallStyleState> => {
+    const parsed = parseWallStyleForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid wall style" };
 
-  createWallStyle({
-    roomId: parsed.data.roomId,
-    wall: parsed.data.wall,
-    style: parsed.data.style,
-    railingHeight: parsed.data.railingHeight ?? null,
-    color: parsed.data.color ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    createWallStyle({
+      roomId: parsed.data.roomId,
+      wall: parsed.data.wall,
+      style: parsed.data.style,
+      railingHeight: parsed.data.railingHeight ?? null,
+      color: parsed.data.color ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateWallStyleAction(
-  _prevState: AddWallStyleState,
-  formData: FormData,
-): Promise<AddWallStyleState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid wall style" };
+export const updateWallStyleAction = defineFormAction(
+  async (_prevState: AddWallStyleState, formData: FormData): Promise<AddWallStyleState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid wall style" };
 
-  const parsed = parseWallStyleForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid wall style" };
+    const parsed = parseWallStyleForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid wall style" };
 
-  updateWallStyle(id, {
-    roomId: parsed.data.roomId,
-    wall: parsed.data.wall,
-    style: parsed.data.style,
-    railingHeight: parsed.data.railingHeight ?? null,
-    color: parsed.data.color ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateWallStyle(id, {
+      roomId: parsed.data.roomId,
+      wall: parsed.data.wall,
+      style: parsed.data.style,
+      railingHeight: parsed.data.railingHeight ?? null,
+      color: parsed.data.color ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const furnitureSchema = z.object({
   roomId: z.coerce.number().int(),
@@ -591,62 +563,58 @@ function parseFurnitureForm(formData: FormData) {
   });
 }
 
-export async function addFurnitureAction(
-  _prevState: AddFurnitureState,
-  formData: FormData,
-): Promise<AddFurnitureState> {
-  await requireUnlocked();
-  const parsed = parseFurnitureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid furniture" };
+export const addFurnitureAction = defineFormAction(
+  async (_prevState: AddFurnitureState, formData: FormData): Promise<AddFurnitureState> => {
+    const parsed = parseFurnitureForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid furniture" };
 
-  const created = createFurniture({
-    roomId: parsed.data.roomId,
-    name: parsed.data.name,
-    category: parsed.data.category,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    depth: parsed.data.depth,
-    height: parsed.data.height,
-    rotationDegrees: parsed.data.rotationDegrees ?? 0,
-    color: parsed.data.color ?? null,
-    material: parsed.data.material ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    const created = createFurniture({
+      roomId: parsed.data.roomId,
+      name: parsed.data.name,
+      category: parsed.data.category,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      depth: parsed.data.depth,
+      height: parsed.data.height,
+      rotationDegrees: parsed.data.rotationDegrees ?? 0,
+      color: parsed.data.color ?? null,
+      material: parsed.data.material ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return { id: created.id };
-}
+    revalidatePath("/house");
+    return { id: created.id };
+  },
+);
 
-export async function updateFurnitureAction(
-  _prevState: AddFurnitureState,
-  formData: FormData,
-): Promise<AddFurnitureState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid furniture" };
+export const updateFurnitureAction = defineFormAction(
+  async (_prevState: AddFurnitureState, formData: FormData): Promise<AddFurnitureState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid furniture" };
 
-  const parsed = parseFurnitureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid furniture" };
+    const parsed = parseFurnitureForm(formData);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid furniture" };
 
-  updateFurniture(id, {
-    roomId: parsed.data.roomId,
-    name: parsed.data.name,
-    category: parsed.data.category,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    width: parsed.data.width,
-    depth: parsed.data.depth,
-    height: parsed.data.height,
-    rotationDegrees: parsed.data.rotationDegrees ?? 0,
-    color: parsed.data.color ?? null,
-    material: parsed.data.material ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateFurniture(id, {
+      roomId: parsed.data.roomId,
+      name: parsed.data.name,
+      category: parsed.data.category,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      width: parsed.data.width,
+      depth: parsed.data.depth,
+      height: parsed.data.height,
+      rotationDegrees: parsed.data.rotationDegrees ?? 0,
+      color: parsed.data.color ?? null,
+      material: parsed.data.material ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
 const lightFixtureSchema = z.object({
   roomId: z.coerce.number().int(),
@@ -678,53 +646,51 @@ function parseLightFixtureForm(formData: FormData) {
   });
 }
 
-export async function addLightFixtureAction(
-  _prevState: AddLightFixtureState,
-  formData: FormData,
-): Promise<AddLightFixtureState> {
-  await requireUnlocked();
-  const parsed = parseLightFixtureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid light fixture" };
+export const addLightFixtureAction = defineFormAction(
+  async (_prevState: AddLightFixtureState, formData: FormData): Promise<AddLightFixtureState> => {
+    const parsed = parseLightFixtureForm(formData);
+    if (!parsed.success)
+      return { error: parsed.error.issues[0]?.message ?? "Invalid light fixture" };
 
-  createLightFixture({
-    roomId: parsed.data.roomId,
-    name: parsed.data.name,
-    type: parsed.data.type,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    height: parsed.data.height ?? null,
-    color: parsed.data.color ?? null,
-    intensity: parsed.data.intensity ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    createLightFixture({
+      roomId: parsed.data.roomId,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      height: parsed.data.height ?? null,
+      color: parsed.data.color ?? null,
+      intensity: parsed.data.intensity ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);
 
-export async function updateLightFixtureAction(
-  _prevState: AddLightFixtureState,
-  formData: FormData,
-): Promise<AddLightFixtureState> {
-  await requireUnlocked();
-  const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return { error: "Invalid light fixture" };
+export const updateLightFixtureAction = defineFormAction(
+  async (_prevState: AddLightFixtureState, formData: FormData): Promise<AddLightFixtureState> => {
+    const id = Number(formData.get("id"));
+    if (!Number.isInteger(id)) return { error: "Invalid light fixture" };
 
-  const parsed = parseLightFixtureForm(formData);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid light fixture" };
+    const parsed = parseLightFixtureForm(formData);
+    if (!parsed.success)
+      return { error: parsed.error.issues[0]?.message ?? "Invalid light fixture" };
 
-  updateLightFixture(id, {
-    roomId: parsed.data.roomId,
-    name: parsed.data.name,
-    type: parsed.data.type,
-    x: parsed.data.x,
-    z: parsed.data.z,
-    height: parsed.data.height ?? null,
-    color: parsed.data.color ?? null,
-    intensity: parsed.data.intensity ?? null,
-    notes: parsed.data.notes ?? null,
-  });
+    updateLightFixture(id, {
+      roomId: parsed.data.roomId,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      x: parsed.data.x,
+      z: parsed.data.z,
+      height: parsed.data.height ?? null,
+      color: parsed.data.color ?? null,
+      intensity: parsed.data.intensity ?? null,
+      notes: parsed.data.notes ?? null,
+    });
 
-  revalidatePath("/house");
-  return {};
-}
+    revalidatePath("/house");
+    return {};
+  },
+);

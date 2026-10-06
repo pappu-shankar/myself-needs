@@ -1,0 +1,15 @@
+node_modules
+.next
+.next-verify
+.git
+.husky
+data
+data-dev
+public/models
+.env
+.env.*
+!.env.example
+*.log
+coverage
+storybook-static
+tsconfig.tsbuildinfo

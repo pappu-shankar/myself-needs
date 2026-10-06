@@ -8,10 +8,10 @@ import {
   get80cUtilization,
   get80dUtilization,
   getCapitalGainsEstimate,
-  getCurrentFinancialYear,
   getRegimeComparison,
 } from "../tax";
-import { getTaxSettingsView } from "../../config/tax";
+import { getTaxSettingsForYear } from "../../config/tax";
+import { currentFiscalYear } from "../../utility/fiscal-year";
 import {
   findDuplicateTransactionGroups,
   countUncategorizedTransactions,
@@ -25,6 +25,8 @@ import { todayIso } from "@/lib/dates";
  * cross-module import. See docs/prd/finance/insights.md.
  */
 export function getFinanceSnapshot() {
+  // Every tax figure below is for the same FY, with that FY's settings.
+  const fy = currentFiscalYear();
   return {
     today: todayIso(),
     accounts: getAccounts(),
@@ -33,12 +35,12 @@ export function getFinanceSnapshot() {
     emergencyFundMonths: getEmergencyFundMonths(),
     insurancePolicies: getInsurancePolicies(),
     dueWorklist: getDueWorklist(),
-    eightyC: get80cUtilization(),
-    eightyD: get80dUtilization(),
-    regime: getRegimeComparison(),
-    capitalGains: getCapitalGainsEstimate(),
-    taxSettings: getTaxSettingsView(),
-    fy: getCurrentFinancialYear(),
+    eightyC: get80cUtilization(fy),
+    eightyD: get80dUtilization(fy),
+    regime: getRegimeComparison(fy),
+    capitalGains: getCapitalGainsEstimate(fy),
+    taxSettings: getTaxSettingsForYear(fy.label),
+    fy,
     duplicateGroups: findDuplicateTransactionGroups(),
     uncategorizedCount: countUncategorizedTransactions(),
     settings: getInsightsSettings(),

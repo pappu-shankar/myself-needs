@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { todayIso } from "@/lib/dates";
+import { addYears, todayIso } from "@/lib/dates";
 import { computeXirr } from "@/modules/finance/service/utility/returns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,8 +24,10 @@ function newRow(id: string, date: string, amount: number): Row {
 export function XirrCalculator() {
   const idBase = useId();
   const today = todayIso();
+  // Two different dates by default — same date for both rows always solves
+  // to "not enough data" (no time elapsed for a rate to compound over).
   const [rows, setRows] = useState<Row[]>([
-    newRow(`${idBase}-1`, today, -100000),
+    newRow(`${idBase}-1`, addYears(today, -1), -100000),
     newRow(`${idBase}-2`, today, 130000),
   ]);
 

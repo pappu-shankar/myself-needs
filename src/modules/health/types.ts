@@ -16,3 +16,5 @@ export interface HealthMetricSummary {
   value: number | null;
   date: string;
 }
+
+export * from "./gym-types";

@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/modules/core/db/client";
 import { recurringRules } from "../../schema/domain/recurring-rules";
@@ -44,13 +44,27 @@ export function listRecurringRules() {
     .all();
 }
 
-/** How many real transactions have confirmed an occurrence of this rule so far. */
-export function countLoggedForRule(ruleId: number): number {
+/**
+ * How many of this rule's logged transactions predate the `period_start`
+ * column (`period_start IS NULL`) — see `getDueWorklist` in
+ * service/domain/recurring.ts for how this is used as a legacy fallback.
+ */
+export function countLegacyLoggedForRule(ruleId: number): number {
   return (
     getDb()
       .select({ value: count() })
       .from(transactions)
-      .where(eq(transactions.recurringRuleId, ruleId))
+      .where(and(eq(transactions.recurringRuleId, ruleId), isNull(transactions.periodStart)))
       .get()?.value ?? 0
   );
+}
+
+/** The exact period_start values this rule has an explicitly-tagged confirmation for. */
+export function listLoggedPeriodStartsForRule(ruleId: number): string[] {
+  return getDb()
+    .select({ periodStart: transactions.periodStart })
+    .from(transactions)
+    .where(and(eq(transactions.recurringRuleId, ruleId), isNotNull(transactions.periodStart)))
+    .all()
+    .map((row) => row.periodStart as string);
 }

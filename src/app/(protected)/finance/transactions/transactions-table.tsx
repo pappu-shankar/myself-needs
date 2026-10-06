@@ -2,10 +2,9 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import type { getTransactionsPage } from "@/modules/finance";
+import type { TransactionRow } from "@/modules/finance";
 import { DataTable, type DataTableColumnDef } from "@/components/ui/data-table";
-
-type TransactionRow = ReturnType<typeof getTransactionsPage>["rows"][number];
+import { Button } from "@/components/ui/button";
 
 function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,12 +62,17 @@ export function TransactionsTable({
   transactions,
   hasAccounts,
   filterAccountName,
+  olderHref,
+  newerHref,
   className,
 }: {
   transactions: TransactionRow[];
   hasAccounts: boolean;
   /** Set when the list is filtered to one account (via ?accountId=) — changes the empty-state copy so it's clear the filter is why nothing shows. */
   filterAccountName?: string;
+  /** Keyset-pagination links — real `<a href>`s (via `Link`), so paging works without client JS. Omitted when there's no further page in that direction. */
+  olderHref?: string;
+  newerHref?: string;
   className?: string;
 }) {
   const data = useMemo(() => transactions, [transactions]);
@@ -83,6 +87,42 @@ export function TransactionsTable({
     : filterAccountName
       ? `Nothing logged against ${filterAccountName} yet.`
       : "Add your first transaction to get started.";
+
+  const newerButton = newerHref ? (
+    <Button
+      variant="outline"
+      size="sm"
+      nativeButton={false}
+      render={<Link href={newerHref} aria-label="Newer transactions" />}
+    >
+      Newer
+    </Button>
+  ) : (
+    <Button variant="outline" size="sm" disabled>
+      Newer
+    </Button>
+  );
+  const olderButton = olderHref ? (
+    <Button
+      variant="outline"
+      size="sm"
+      nativeButton={false}
+      render={<Link href={olderHref} aria-label="Older transactions" />}
+    >
+      Older
+    </Button>
+  ) : (
+    <Button variant="outline" size="sm" disabled>
+      Older
+    </Button>
+  );
+  const pager =
+    olderHref || newerHref ? (
+      <div className="flex items-center justify-between gap-4 border-t px-4 py-3">
+        {newerButton}
+        {olderButton}
+      </div>
+    ) : undefined;
 
   return (
     <DataTable
@@ -109,6 +149,7 @@ export function TransactionsTable({
           )
         )
       }
+      footer={pager}
       className={className}
     />
   );

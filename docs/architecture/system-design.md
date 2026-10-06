@@ -19,7 +19,7 @@ modules/<module>/service/      — pure business logic (framework-agnostic, no N
    ↓
 modules/<module>/db/schema/ + queries/  — Drizzle
    ↓
-modules/core/db (Drizzle client) → data/app.db (encrypted SQLite)
+modules/core/db (Drizzle client, vault chosen by request scope) → the signed-in user's (or current space's) encrypted SQLite vault
 ```
 
 | Layer | Responsibility | May import |
@@ -34,16 +34,20 @@ modules/core/db (Drizzle client) → data/app.db (encrypted SQLite)
 
 Every Server Action is built with `defineFormAction(schema, handler)` (or `defineAction` for programmatic calls) from `src/modules/core/action/define-action.ts`. The wrapper:
 
-- requires an unlocked vault (`requireUnlocked`) before anything else runs;
+- requires a signed-in user (`requireUserForAction`) and runs the handler inside `runWithScope`, so `getDb()` resolves to that user's vault (or the space they are viewing). While the session is viewing a space as a **viewer**, every action is refused unless declared `readOnly: true` (search, export, account settings);
 - turns FormData into an object and validates it with the Zod schema (shared field types live in `src/lib/validation.ts`);
 - runs the handler, then refreshes every page (`revalidatePath("/", "layout")`) — modules never hard-code app URLs;
 - returns an `ActionState<T>` (`{ ok, error, fieldErrors, values, data }`, `src/modules/core/action/types.ts`) instead of throwing. Services throw `DomainError` (`src/modules/core/errors.ts`) for user-facing rule violations, which is shown verbatim; SQLite constraint errors get friendly messages; anything else is logged (never with row data) and replaced by a generic message.
 
-Every protected `page.tsx` starts with `await requireUnlocked()` — a layout-level check is not a boundary in the App Router, because page segments render independently of their layout. API route handlers do the same.
+Every protected `page.tsx`, layout and **`generateMetadata`** starts with `await requireUser()` (it also binds the vault to the render, so `getDb()` works in the components below) — a layout-level check is not a boundary in the App Router, because page segments render independently of their layout, and `generateMetadata` runs separately from the page body. Admin pages use `requireAdmin()`. API route handlers and hand-written actions wrap their work in `withUser(fn)`. Admin Server Actions use `defineAdminAction` (`requireAdmin`, no vault binding; admin code never imports `getDb`). `requireUnlocked` is a deprecated alias of `requireUser`; in a route handler or hand-written action it binds no scope, so those call sites must use `withUser`. `AsyncLocalStorage.enterWith` is forbidden. Public pages (login, invite, setup, claim) use `getOptionalUser()` or nothing. Why the two scope carriers exist: [security.md](./security.md#request-routing-which-database-does-this-request-use).
 
 "Today" is always `todayIso()` from `src/lib/dates.ts` (local calendar date), never `toISOString().slice(0, 10)` (the UTC date). Amounts and percentages are formatted with `src/lib/format.ts`.
 
-These rules, plus the module-boundary rules below, are checked by `src/test/architecture.test.ts`, which runs with the rest of the suite on every commit.
+The architecture test also checks that `requireUser`/`requireAdmin`/`withUser` appears in every protected page, layout and `generateMetadata`, and that `enterWith` is never used. These rules, plus the module-boundary rules below, are checked by `src/test/architecture.test.ts`, which runs with the rest of the suite on every commit.
+
+## Isomorphic code inside a module
+
+A module may keep pure, framework-free code that runs on **both** the server and in client components — today `health/engine/` (training math: progression, e1RM, plates, readiness …) and `health/importers/` (file parsers that must run in the browser, because an Apple Health export can be hundreds of MB). Those folders may import only their own files, the module's client-safe `gym-types.ts`, `engine/` and `@/lib/dates` — no database, Next.js or Node APIs — so a client component can import them directly. Enforced by `src/test/architecture.test.ts` ("Isomorphic health code"). See [../prd/health/gym.md](../prd/health/gym.md).
 
 ## Module boundary rule
 

@@ -1,32 +1,97 @@
+import { z } from "zod";
+import { DomainError } from "@/modules/core/errors";
 import type { PriceProvider, PriceQuote } from "./types";
 
-interface MfApiResponse {
-  data?: { date: string; nav: string }[];
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** AMFI scheme codes are plain numbers — anything else is rejected before a request is made. */
+const SCHEME_CODE = /^\d{1,10}$/;
+
+/** mfapi.in dates are DD-MM-YYYY; this app stores YYYY-MM-DD. */
+function toIsoDate(ddmmyyyy: string): string | null {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(ddmmyyyy);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const iso = `${year}-${month}-${day}`;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  // Rejects impossible dates like 31-02-2024, which Date would silently roll over.
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso) return null;
+  return iso;
 }
 
+const latestNavResponse = z.object({
+  data: z
+    .array(
+      z.object({
+        date: z.string().transform((value, ctx) => {
+          const iso = toIsoDate(value);
+          if (!iso) {
+            ctx.addIssue({ code: "custom", message: "Malformed NAV date" });
+            return z.NEVER;
+          }
+          return iso;
+        }),
+        nav: z.string().transform((value, ctx) => {
+          const nav = Number(value);
+          if (!Number.isFinite(nav) || nav <= 0) {
+            ctx.addIssue({ code: "custom", message: "NAV must be a positive number" });
+            return z.NEVER;
+          }
+          return nav;
+        }),
+      }),
+    )
+    .min(1),
+});
+
 /**
- * AMFI-sourced NAV via the free, no-key mfapi.in API — `external_code` is
- * the AMFI scheme code. Called only on a manual "Refresh NAV" click, never a
- * background poll. See docs/prd/finance/investments.md.
+ * AMFI-sourced NAV via the free, no-key mfapi.in API
+ * (`GET /mf/{scheme_code}/latest`, documented at https://www.mfapi.in/docs/)
+ * — `external_code` is the public AMFI scheme code, the only thing ever sent.
+ * Called only on a manual "Refresh NAV" click, never a background poll. See
+ * docs/prd/finance/investments.md.
+ *
+ * Every failure surfaces as a `DomainError` with a message safe to show.
  */
 export const mutualFundNavProvider: PriceProvider = {
   async fetchLatestPrice(schemeCode: string): Promise<PriceQuote> {
-    const res = await fetch(`https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}`);
+    const code = schemeCode.trim();
+    if (!SCHEME_CODE.test(code)) {
+      throw new DomainError("The AMFI scheme code should be a number, e.g. 119551");
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`https://api.mfapi.in/mf/${code}/latest`, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        cache: "no-store",
+      });
+    } catch (err) {
+      // Checked by name: DOMException isn't an `Error` subclass in every runtime.
+      const name = (err as { name?: unknown } | null)?.name;
+      if (name === "TimeoutError" || name === "AbortError") {
+        throw new DomainError("The NAV service took too long to respond. Try again later.");
+      }
+      throw new DomainError("Couldn't reach the NAV service. Check your connection and retry.");
+    }
+
     if (!res.ok) {
-      throw new Error(`mfapi.in request failed (${res.status}) for scheme code ${schemeCode}`);
+      throw new DomainError(`The NAV service returned an error (${res.status}). Try again later.`);
     }
 
-    const body = (await res.json()) as MfApiResponse;
-    const latest = body.data?.[0];
-    if (!latest) {
-      throw new Error(`No NAV data returned for scheme code ${schemeCode}`);
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new DomainError("The NAV service sent a response that couldn't be read.");
     }
 
-    // mfapi.in dates are DD-MM-YYYY; the rest of this app stores YYYY-MM-DD.
-    const [day, month, year] = latest.date.split("-");
-    return {
-      date: `${year}-${month}-${day}`,
-      pricePerUnit: Number(latest.nav),
-    };
+    const parsed = latestNavResponse.safeParse(body);
+    if (!parsed.success) {
+      throw new DomainError(`No valid NAV was returned for scheme code ${code}.`);
+    }
+
+    const latest = parsed.data.data[0];
+    return { date: latest.date, pricePerUnit: latest.nav };
   },
 };

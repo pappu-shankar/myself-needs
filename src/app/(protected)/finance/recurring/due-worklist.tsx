@@ -51,6 +51,7 @@ function DueItemRow({ item }: { item: DueItem }) {
           className="mt-3 grid grid-cols-1 items-start gap-3 sm:grid-cols-4"
         >
           <input type="hidden" name="ruleId" value={item.ruleId} />
+          <input type="hidden" name="periodStart" value={item.periodStart} />
           <FormField label="Amount" htmlFor={`amount-${item.ruleId}-${item.periodStart}`}>
             <Input
               type="number"

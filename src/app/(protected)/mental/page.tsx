@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { todayIso } from "@/lib/dates";
 import { getMedications, getTodaysMedications } from "@/modules/mental";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MentalPage() {
-  await requireUnlocked();
+  await requireUser();
   const medications = getMedications();
   const today = todayIso();
   const todaysMedications = getTodaysMedications(today);

@@ -71,7 +71,7 @@ export function listCashFlowsForHolding(holdingId: number, asOfDate?: string) {
         ? and(eq(investmentCashFlows.holdingId, holdingId), lte(investmentCashFlows.date, asOfDate))
         : eq(investmentCashFlows.holdingId, holdingId),
     )
-    .orderBy(desc(investmentCashFlows.date))
+    .orderBy(desc(investmentCashFlows.date), desc(investmentCashFlows.id))
     .all();
 }
 
@@ -79,8 +79,21 @@ export function listAllCashFlows() {
   return getDb().select().from(investmentCashFlows).all();
 }
 
-export function insertValuation(entry: NewValuation) {
-  return getDb().insert(investmentValuations).values(entry).returning().get();
+/**
+ * One price per holding per day — `(holding_id, date)` is unique, so a second
+ * entry for the same day (a re-entered manual price or a repeated NAV refresh)
+ * replaces the price instead of failing.
+ */
+export function upsertValuation(entry: NewValuation) {
+  return getDb()
+    .insert(investmentValuations)
+    .values(entry)
+    .onConflictDoUpdate({
+      target: [investmentValuations.holdingId, investmentValuations.date],
+      set: { pricePerUnit: entry.pricePerUnit },
+    })
+    .returning()
+    .get();
 }
 
 export function listValuationsForHolding(holdingId: number) {

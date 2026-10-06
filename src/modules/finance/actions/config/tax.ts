@@ -1,69 +1,87 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
-import { setTaxSettings, editTaxSlabRate } from "../../service/config/tax";
+import { defineFormAction } from "@/modules/core/action/define-action";
+import { zId, zNumber, zPercent } from "@/lib/validation";
+import {
+  addTaxSlab,
+  editTaxSlab,
+  removeTaxSlab,
+  setTaxSettings,
+  startFiscalYear,
+} from "../../service/config/tax";
 
-const settingsSchema = z.object({
-  eightyCLimit: z.coerce.number().min(0),
-  eightyDLimit: z.coerce.number().min(0),
-  equityLtcgThresholdMonths: z.coerce.number().int().min(0),
-  equityLtcgExemption: z.coerce.number().min(0),
-  equityLtcgRate: z.coerce.number().min(0).max(100),
-  equityStcgRate: z.coerce.number().min(0).max(100),
-  otherLtcgThresholdMonths: z.coerce.number().int().min(0),
-  otherLtcgRate: z.coerce.number().min(0).max(100),
-  otherStcgRate: z.coerce.number().min(0).max(100),
-  standardDeductionOld: z.coerce.number().min(0),
-  standardDeductionNew: z.coerce.number().min(0),
-  cessPercent: z.coerce.number().min(0).max(100),
-  rebate87aThresholdOld: z.coerce.number().min(0),
-  rebate87aThresholdNew: z.coerce.number().min(0),
-});
+const zFiscalYear = z
+  .string({ error: "Pick a financial year" })
+  .regex(/^\d{4}-\d{2}$/, "Pick a financial year like 2025-26");
+const zRegime = z.enum(["old", "new"], { error: "Pick a regime" });
+const zRupees = zNumber.refine((n) => n >= 0, "Can't be negative");
+const zMonths = zNumber.refine((n) => Number.isInteger(n) && n >= 0, "Enter whole months");
+/** Blank = no upper limit (the open-ended top bracket). */
+const zUpto = zNumber
+  .refine((n) => n > 0, "Upper limit must be more than zero")
+  .optional()
+  .transform((n) => n ?? null);
 
-export interface UpdateTaxSettingsState {
-  error?: string;
-}
+export const updateTaxSettingsAction = defineFormAction(
+  z.object({
+    fiscalYear: zFiscalYear,
+    eightyCLimit: zRupees,
+    eightyDLimit: zRupees,
+    equityLtcgThresholdMonths: zMonths,
+    equityLtcgExemption: zRupees,
+    equityLtcgRate: zPercent,
+    equityStcgRate: zPercent,
+    otherLtcgThresholdMonths: zMonths,
+    otherLtcgRate: zPercent,
+    otherStcgRate: zPercent,
+    standardDeductionOld: zRupees,
+    standardDeductionNew: zRupees,
+    cessPercent: zPercent,
+    rebate87aThresholdOld: zRupees,
+    rebate87aThresholdNew: zRupees,
+  }),
+  ({ fiscalYear, ...patch }) => {
+    setTaxSettings(fiscalYear, patch);
+  },
+  { name: "finance:tax-settings" },
+);
 
-export async function updateTaxSettingsAction(
-  _prevState: UpdateTaxSettingsState,
-  formData: FormData,
-): Promise<UpdateTaxSettingsState> {
-  await requireUnlocked();
-  const parsed = settingsSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid settings" };
-  }
+/** Creates an FY by copying the most recent FY's settings and slabs. */
+export const startFiscalYearAction = defineFormAction(
+  z.object({ fiscalYear: zFiscalYear }),
+  ({ fiscalYear }) => {
+    startFiscalYear(fiscalYear);
+    return { fiscalYear };
+  },
+  { name: "finance:tax-start-fy" },
+);
 
-  setTaxSettings(parsed.data);
-  revalidatePath("/finance/settings");
-  return {};
-}
+export const addTaxSlabAction = defineFormAction(
+  z.object({
+    fiscalYear: zFiscalYear,
+    regime: zRegime,
+    uptoAmount: zUpto,
+    ratePercent: zPercent,
+  }),
+  ({ fiscalYear, regime, uptoAmount, ratePercent }) => {
+    addTaxSlab(fiscalYear, regime, uptoAmount, ratePercent);
+  },
+  { name: "finance:tax-slab-add" },
+);
 
-const slabRateSchema = z.object({
-  id: z.coerce.number().int(),
-  ratePercent: z.coerce.number().min(0).max(100),
-});
+export const updateTaxSlabAction = defineFormAction(
+  z.object({ id: zId, uptoAmount: zUpto, ratePercent: zPercent }),
+  ({ id, uptoAmount, ratePercent }) => {
+    editTaxSlab(id, uptoAmount, ratePercent);
+  },
+  { name: "finance:tax-slab-update" },
+);
 
-export interface UpdateSlabRateState {
-  error?: string;
-}
-
-export async function updateSlabRateAction(
-  _prevState: UpdateSlabRateState,
-  formData: FormData,
-): Promise<UpdateSlabRateState> {
-  await requireUnlocked();
-  const parsed = slabRateSchema.safeParse({
-    id: formData.get("id"),
-    ratePercent: formData.get("ratePercent"),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid rate" };
-  }
-
-  editTaxSlabRate(parsed.data.id, parsed.data.ratePercent);
-  revalidatePath("/finance/settings");
-  return {};
-}
+export const deleteTaxSlabAction = defineFormAction(
+  z.object({ id: zId }),
+  ({ id }) => {
+    removeTaxSlab(id);
+  },
+  { name: "finance:tax-slab-delete" },
+);

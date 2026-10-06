@@ -45,9 +45,47 @@ const SEGMENT_LABELS: Record<string, string> = {
   irr: "IRR calculator",
   inflation: "Inflation calculator",
   emi: "EMI calculator",
+
+  gym: "Gym",
+  workout: "Workout",
+  history: "History",
+  routines: "Routines",
+  plan: "Weekly plan",
+  programs: "Programs",
+  library: "Exercises",
+  stats: "Stats",
+  body: "Body",
+  tools: "Tools",
+  camera: "Camera rep counter",
+  import: "Import & export",
+
+  admin: "Admin",
+  users: "Users",
+  invites: "Invites",
+  spaces: "Spaces",
+  devices: "Devices",
+  security: "Security",
+  password: "Password",
+  account: "Account",
 };
 
-function labelFor(segment: string): string {
+/** What an id segment (numeric or UUID) is, named after the collection it sits under. */
+const ID_LABELS: Record<string, string> = {
+  routines: "Routine",
+  history: "Workout",
+  library: "Exercise",
+  "photo-editor": "Photo",
+  spaces: "Space",
+  users: "User",
+  invites: "Invite",
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function labelFor(segment: string, parent?: string): string {
+  if (/^\d+$/.test(segment) || UUID.test(segment)) {
+    return (parent && ID_LABELS[parent]) ?? "Details";
+  }
   return (
     SEGMENT_LABELS[segment] ?? segment.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
@@ -61,7 +99,7 @@ export function Breadcrumbs() {
   if (segments.length === 0) return null;
 
   const crumbs = segments.map((segment, i) => ({
-    label: labelFor(segment),
+    label: labelFor(segment, segments[i - 1]),
     href: "/" + segments.slice(0, i + 1).join("/"),
   }));
 

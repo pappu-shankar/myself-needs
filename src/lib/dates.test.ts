@@ -6,10 +6,12 @@ import {
   addYears,
   daysBetween,
   endOfMonth,
+  nowLocalDateTime,
   parseIsoDate,
   startOfMonth,
   todayIso,
   toIsoDate,
+  toLocalDateTime,
 } from "./dates";
 
 afterEach(() => {
@@ -57,5 +59,18 @@ describe("date arithmetic", () => {
     expect(startOfMonth("2026-02-17")).toBe("2026-02-01");
     expect(endOfMonth("2024-02-10")).toBe("2024-02-29");
     expect(endOfMonth("2026-12-05")).toBe("2026-12-31");
+  });
+});
+
+describe("local date-times", () => {
+  it("formats the local wall-clock time, zero-padded, with no zone", () => {
+    expect(toLocalDateTime(new Date(2026, 0, 5, 7, 3, 9))).toBe("2026-01-05T07:03:09");
+    expect(toLocalDateTime(new Date(2026, 11, 31, 23, 59, 59))).toBe("2026-12-31T23:59:59");
+  });
+
+  it("reads now in local time, not UTC", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 1, 0, 30, 15));
+    expect(nowLocalDateTime()).toBe("2026-04-01T00:30:15");
   });
 });

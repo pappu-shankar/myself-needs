@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getHoldingsWithValue, getPortfolioXirr } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,10 +20,12 @@ function formatPercent(rate: number | null) {
 }
 
 export default async function InvestmentsPage() {
-  await requireUnlocked();
+  await requireUser();
   const holdings = getHoldingsWithValue();
   const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
   const portfolioXirr = getPortfolioXirr();
+  const unvalued = holdings.filter((h) => h.missing !== null).length;
+  const maturedUnpaid = holdings.filter((h) => h.maturedOn !== null).length;
 
   return (
     <>
@@ -46,6 +48,18 @@ export default async function InvestmentsPage() {
           </CardHeader>
           <CardContent>
             <p className="tabular-nums text-2xl font-semibold">{formatAmount(totalValue)}</p>
+            {unvalued > 0 && (
+              <p className="text-muted-foreground mt-1 text-xs">
+                {unvalued} holding{unvalued === 1 ? "" : "s"} not valued yet (missing units or
+                price) — not included.
+              </p>
+            )}
+            {maturedUnpaid > 0 && (
+              <p className="text-muted-foreground mt-1 text-xs">
+                {maturedUnpaid} matured deposit{maturedUnpaid === 1 ? "" : "s"} awaiting a payout
+                entry.
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>

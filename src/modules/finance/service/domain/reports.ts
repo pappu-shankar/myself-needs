@@ -1,19 +1,15 @@
+import { addMonths, startOfMonth, todayIso } from "@/lib/dates";
 import { getExpenseByCategory, getMonthlyIncomeExpense } from "../../db/queries/domain/reports";
 import { listAccountsWithBalances } from "../../db/queries/domain/accounts";
 
+/** Start of the month `monthsAgo` months before the current one (0 = this month), in the local calendar — never derived via `toISOString()`, which is the UTC date and can be a day off from India's local date. */
 function monthStart(monthsAgo: number): string {
-  const today = new Date();
-  return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - monthsAgo, 1))
-    .toISOString()
-    .slice(0, 10);
+  return addMonths(startOfMonth(todayIso()), -monthsAgo);
 }
 
 /** Exclusive end bound — the first day of the month after the current one, so the current (partial) month is included. */
 function nextMonthStart(): string {
-  const today = new Date();
-  return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1))
-    .toISOString()
-    .slice(0, 10);
+  return addMonths(startOfMonth(todayIso()), 1);
 }
 
 export interface IncomeExpenseReport {
@@ -41,14 +37,22 @@ export function getIncomeExpenseReport(months = 6): IncomeExpenseReport {
 const EMERGENCY_FUND_WINDOW_MONTHS = 3;
 const LIQUID_ACCOUNT_TYPES = new Set(["checking", "savings", "cash"]);
 
-/** Liquid assets ÷ trailing-3-month average monthly expense = months of coverage. Null if there's no expense history to divide by. */
+/**
+ * Liquid assets ÷ average monthly expense over the last 3 *complete* months
+ * = months of coverage. Unlike the income/expense trend (which deliberately
+ * includes the current, still-in-progress month), this window ends at the
+ * start of the current month so a mostly-empty partial month can't drag the
+ * average down and inflate the ratio. Null if there's no expense history to
+ * divide by.
+ */
 export function getEmergencyFundMonths(): number | null {
   const liquidAssets = listAccountsWithBalances()
     .filter((a) => LIQUID_ACCOUNT_TYPES.has(a.type))
     .reduce((sum, a) => sum + a.balance, 0);
 
-  const startDate = monthStart(EMERGENCY_FUND_WINDOW_MONTHS - 1);
-  const endDate = nextMonthStart();
+  const currentMonthStart = startOfMonth(todayIso());
+  const startDate = addMonths(currentMonthStart, -EMERGENCY_FUND_WINDOW_MONTHS);
+  const endDate = currentMonthStart; // exclusive — excludes the current, still-partial month
   const trend = getMonthlyIncomeExpense(startDate, endDate);
   const totalExpense = trend.reduce((sum, r) => sum + r.expense, 0);
   const avgMonthlyExpense = totalExpense / EMERGENCY_FUND_WINDOW_MONTHS;

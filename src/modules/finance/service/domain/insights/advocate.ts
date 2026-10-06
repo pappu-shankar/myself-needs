@@ -1,5 +1,6 @@
 import type { FinanceSnapshot } from "./snapshot";
 import type { Insight } from "./types";
+import { daysBetween } from "@/lib/dates";
 
 function formatAmount(amount: number) {
   return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -12,10 +13,10 @@ export function regimeVerdictRule(snapshot: FinanceSnapshot): Insight[] {
   if (snapshot.regime.savings <= 0) return [];
   return [
     {
-      id: `regime-verdict:${snapshot.fy.label}:${snapshot.regime.betterRegime}:${Math.round(snapshot.regime.savings)}`,
+      id: `regime-verdict:FY ${snapshot.fy.label}:${snapshot.regime.betterRegime}:${Math.round(snapshot.regime.savings)}`,
       category: "advocate",
       severity: "info",
-      message: `${snapshot.regime.betterRegime === "old" ? "Old" : "New"} regime saves you ${formatAmount(snapshot.regime.savings)} this year (${snapshot.fy.label}).`,
+      message: `${snapshot.regime.betterRegime === "old" ? "Old" : "New"} regime saves you ${formatAmount(snapshot.regime.savings)} this year (FY ${snapshot.fy.label}).`,
       link: "/finance/tax/regime-comparison",
     },
   ];
@@ -28,9 +29,10 @@ export function rateArbitrageRule(snapshot: FinanceSnapshot): Insight[] {
   );
   if (liabilities.length === 0) return [];
 
-  const lowestYieldingDebt = snapshot.holdings.find(
-    (h) => (h.type === "fd" || h.type === "rd") && h.interestRate != null,
-  );
+  // The open FD/RD earning the least — the one most worth breaking to pay down debt.
+  const lowestYieldingDebt = snapshot.holdings
+    .filter((h) => (h.type === "fd" || h.type === "rd") && h.interestRate != null && !h.closed)
+    .sort((a, b) => (a.interestRate ?? 0) - (b.interestRate ?? 0))[0];
   if (!lowestYieldingDebt?.interestRate) return [];
 
   const insights: Insight[] = [];
@@ -108,17 +110,16 @@ export function debtPriorityRule(snapshot: FinanceSnapshot): Insight[] {
 export function eightyCHeadroomRule(snapshot: FinanceSnapshot): Insight[] {
   const remaining = snapshot.eightyC.limit - snapshot.eightyC.used;
   if (remaining <= 0) return [];
-  const daysLeftInFY = Math.floor(
-    (Date.parse(snapshot.fy.end) - Date.parse(snapshot.today)) / (1000 * 60 * 60 * 24),
-  );
+  // fy.end is inclusive (31 March).
+  const daysLeftInFY = daysBetween(snapshot.today, snapshot.fy.end) + 1;
   const monthsLeft = Math.round(daysLeftInFY / 30);
   if (monthsLeft <= 0) return [];
   return [
     {
-      id: `80c-headroom:${snapshot.fy.label}:${Math.round(remaining)}`,
+      id: `80c-headroom:FY ${snapshot.fy.label}:${Math.round(remaining)}`,
       category: "advocate",
       severity: "info",
-      message: `${formatAmount(remaining)} of 80C headroom left with ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} left in ${snapshot.fy.label}.`,
+      message: `${formatAmount(remaining)} of 80C headroom left with ${monthsLeft} month${monthsLeft === 1 ? "" : "s"} left in FY ${snapshot.fy.label}.`,
       link: "/finance/tax/deductions",
     },
   ];

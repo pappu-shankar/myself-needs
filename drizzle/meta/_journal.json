@@ -176,6 +176,20 @@
       "when": 1790673252134,
       "tag": "0024_phase2_finance_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791066190290,
+      "tag": "0025_health_gym",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791119383948,
+      "tag": "0026_health_gym_units_photos",
+      "breakpoints": true
     }
   ]
 }

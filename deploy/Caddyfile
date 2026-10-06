@@ -1,0 +1,21 @@
+# Automatic HTTPS (Let's Encrypt) for $APP_DOMAIN. Ports 80 and 443 must be reachable.
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Uploads (fashion photos) go through Server Actions capped at 10 MB by the app;
+	# this is the outer bound.
+	request_body {
+		max_size 12MB
+	}
+
+	reverse_proxy app:3000 {
+		# Overwrite, never append: clients must not be able to spoof their address.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Real-IP
+	}
+
+	# The app sets its own security headers (CSP, HSTS); just don't leak the server.
+	header -Server
+}

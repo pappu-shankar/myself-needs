@@ -1,35 +1,48 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
-import { get80cUtilization, get80dUtilization } from "@/modules/finance";
+import { currentFiscalYear, get80cUtilization, get80dUtilization } from "@/modules/finance";
+import { formatAmount } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FiscalYearPicker } from "../fiscal-year-picker";
+import { PolicyNote } from "../policy-note";
+import { fiscalYearOptions, selectedFiscalYear } from "../selected-fiscal-year";
 
 export const metadata: Metadata = {
   title: "Deductions — Personal Life OS",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-export default async function TaxDeductionsPage() {
-  await requireUnlocked();
-  const eightyC = get80cUtilization();
-  const eightyD = get80dUtilization();
+export default async function TaxDeductionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fy?: string | string[] }>;
+}) {
+  await requireUser();
+  const fy = selectedFiscalYear((await searchParams).fy);
+  const eightyC = get80cUtilization(fy);
+  const eightyD = get80dUtilization(fy);
 
   return (
     <>
       <PageHeader
         title="Deductions"
-        description="80C and 80D utilization for the current financial year."
+        description={`80C and 80D utilization for FY ${fy.label} (${fy.start} to ${fy.end}).`}
         actions={
           <Button variant="outline" nativeButton={false} render={<Link href="/finance/tax" />}>
             Back to Tax planning
           </Button>
         }
       />
+
+      <FiscalYearPicker
+        basePath="/finance/tax/deductions"
+        years={fiscalYearOptions(fy)}
+        selected={fy.label}
+        current={currentFiscalYear().label}
+      />
+      <PolicyNote fiscalYear={fy.label} policyFiscalYear={eightyC.policyFiscalYear} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
@@ -56,7 +69,7 @@ export default async function TaxDeductionsPage() {
               80D utilization
             </CardTitle>
             <p className="text-muted-foreground mt-1 text-xs">
-              Health insurance premiums paid this year
+              Health insurance premiums paid in the year
             </p>
           </CardHeader>
           <CardContent>

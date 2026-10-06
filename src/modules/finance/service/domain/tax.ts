@@ -1,39 +1,36 @@
-import { getTaxSettings } from "../../db/queries/config/tax-settings";
-import { listTaxSlabs } from "../../db/queries/config/tax-slabs";
-import { get80cHoldingContributions, getInsurancePremiumsPaid } from "../../db/queries/domain/tax";
+import { addDays, addMonths } from "@/lib/dates";
+import {
+  get80cHoldingContributions,
+  getInsurancePremiumsPaid,
+  listRedemptionDates,
+} from "../../db/queries/domain/tax";
 import { getMonthlyIncomeExpense } from "../../db/queries/domain/reports";
 import { getHoldingsWithValue, getCashFlowsForHolding } from "./investments";
+import { getTaxSettingsForYear, getTaxSlabsForYear, listTaxPolicyYears } from "../config/tax";
+import { currentFiscalYear, fiscalYearOf, type FiscalYear } from "../utility/fiscal-year";
 import { UNIT_PRICED_TYPES, type InvestmentType } from "../../types";
 
-/** India's financial year runs April–March. Returns [start, end) as YYYY-MM-DD, `end` exclusive. */
-export function getCurrentFinancialYear(today = new Date()): {
-  start: string;
-  end: string;
-  label: string;
-} {
-  const year = today.getUTCFullYear();
-  const isBeforeApril = today.getUTCMonth() < 3; // getUTCMonth() is 0-indexed; 3 = April
-  const startYear = isBeforeApril ? year - 1 : year;
-  return {
-    start: `${startYear}-04-01`,
-    end: `${startYear + 1}-04-01`,
-    label: `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`,
-  };
+export interface DeductionUtilization {
+  used: number;
+  limit: number;
+  /** The FY whose settings supplied `limit` (an earlier FY when this one has none of its own). */
+  policyFiscalYear: string;
 }
 
-export function get80cUtilization(): { used: number; limit: number } {
-  const { start, end } = getCurrentFinancialYear();
-  const settings = getTaxSettings();
+/** 80C contributions + 80C-eligible premiums paid within the FY, against that FY's limit. */
+export function get80cUtilization(fy: FiscalYear = currentFiscalYear()): DeductionUtilization {
+  const settings = getTaxSettingsForYear(fy.label);
   const used =
-    get80cHoldingContributions(start, end) + getInsurancePremiumsPaid("is80cEligible", start, end);
-  return { used, limit: settings.eightyCLimit };
+    get80cHoldingContributions(fy.start, fy.end) +
+    getInsurancePremiumsPaid("is80cEligible", fy.start, fy.end);
+  return { used, limit: settings.eightyCLimit, policyFiscalYear: settings.fiscalYear };
 }
 
-export function get80dUtilization(): { used: number; limit: number } {
-  const { start, end } = getCurrentFinancialYear();
-  const settings = getTaxSettings();
-  const used = getInsurancePremiumsPaid("is80dEligible", start, end);
-  return { used, limit: settings.eightyDLimit };
+/** 80D-eligible (health) premiums paid within the FY, against that FY's limit. */
+export function get80dUtilization(fy: FiscalYear = currentFiscalYear()): DeductionUtilization {
+  const settings = getTaxSettingsForYear(fy.label);
+  const used = getInsurancePremiumsPaid("is80dEligible", fy.start, fy.end);
+  return { used, limit: settings.eightyDLimit, policyFiscalYear: settings.fiscalYear };
 }
 
 const EQUITY_RATE_TYPES = new Set<InvestmentType>(["equity", "mutual_fund_domestic"]);
@@ -100,13 +97,12 @@ function computeFifoGains(
     for (const t of touched) {
       const gainShare = excessGain * (t.costConsumed / totalCostConsumed);
       if (gainShare <= 0) continue;
-      const months = monthsBetween(t.lot.date, cf.date);
       events.push({
         holdingId,
         holdingName,
         redemptionDate: cf.date,
         gain: gainShare,
-        isLongTerm: months >= ltcgThresholdMonths,
+        isLongTerm: isLongTermHolding(t.lot.date, cf.date, ltcgThresholdMonths),
         category,
       });
     }
@@ -115,27 +111,49 @@ function computeFifoGains(
   return events;
 }
 
-function monthsBetween(fromDate: string, toDate: string): number {
-  const [fy, fm] = fromDate.split("-").map(Number);
-  const [ty, tm] = toDate.split("-").map(Number);
-  return (ty - fy) * 12 + (tm - fm);
+/**
+ * Income-tax Act s.2(42A): an asset is short-term if held for "not more than"
+ * the threshold (12 months for listed equity / equity MFs, 24 for the rest
+ * under current rules), so long-term means held for MORE than the threshold.
+ * Day-exact, with calendar-month arithmetic that clamps to month end: bought
+ * 2024-03-15 → long-term from 2025-03-16; bought 2024-02-29 → long-term from
+ * 2025-03-01 (2024-02-29 + 12 months = 2025-02-28).
+ */
+export function isLongTermHolding(
+  buyDate: string,
+  sellDate: string,
+  thresholdMonths: number,
+): boolean {
+  return sellDate > addMonths(buyDate, thresholdMonths);
 }
 
 export interface CapitalGainsEstimate {
+  fiscalYear: FiscalYear;
+  /** The FY whose settings supplied the thresholds/rates/exemption. */
+  policyFiscalYear: string;
   events: GainEvent[];
   ltcgEquity: number;
   stcgEquity: number;
   ltcgOther: number;
   stcgOther: number;
+  equityLtcgExemption: number;
   taxEquityLtcg: number;
   taxEquityStcg: number;
   taxOther: number;
   totalTax: number;
 }
 
-/** Capital-gains estimate over every unit-priced holding's full cash-flow history — no schema beyond the existing ledger. See docs/prd/finance/tax-planning.md. */
-export function getCapitalGainsEstimate(): CapitalGainsEstimate {
-  const settings = getTaxSettings();
+/**
+ * Capital-gains estimate for one FY: FIFO runs over each unit-priced holding's
+ * full cash-flow history (earlier redemptions consume earlier lots), but only
+ * gains whose redemption date falls inside the FY count, and that FY's
+ * thresholds, rates and equity LTCG exemption apply. See
+ * docs/prd/finance/tax-planning.md.
+ */
+export function getCapitalGainsEstimate(
+  fy: FiscalYear = currentFiscalYear(),
+): CapitalGainsEstimate {
+  const settings = getTaxSettingsForYear(fy.label);
   const events: GainEvent[] = [];
 
   for (const holding of getHoldingsWithValue()) {
@@ -147,9 +165,12 @@ export function getCapitalGainsEstimate(): CapitalGainsEstimate {
         : settings.otherLtcgThresholdMonths;
     const cashFlows = getCashFlowsForHolding(holding.id);
     events.push(
-      ...computeFifoGains(holding.id, holding.name, cashFlows, thresholdMonths, category),
+      ...computeFifoGains(holding.id, holding.name, cashFlows, thresholdMonths, category).filter(
+        (e) => e.redemptionDate >= fy.start && e.redemptionDate <= fy.end,
+      ),
     );
   }
+  events.sort((a, b) => a.redemptionDate.localeCompare(b.redemptionDate));
 
   const sum = (pred: (e: GainEvent) => boolean) =>
     events.filter(pred).reduce((s, e) => s + e.gain, 0);
@@ -166,16 +187,29 @@ export function getCapitalGainsEstimate(): CapitalGainsEstimate {
     ltcgOther * (settings.otherLtcgRate / 100) + stcgOther * (settings.otherStcgRate / 100);
 
   return {
+    fiscalYear: fy,
+    policyFiscalYear: settings.fiscalYear,
     events,
     ltcgEquity,
     stcgEquity,
     ltcgOther,
     stcgOther,
+    equityLtcgExemption: settings.equityLtcgExemption,
     taxEquityLtcg,
     taxEquityStcg,
     taxOther,
     totalTax: taxEquityLtcg + taxEquityStcg + taxOther,
   };
+}
+
+/** FYs worth offering in a tax FY picker: the current FY, every FY with a redemption, and every FY with its own tax settings/slabs — newest first. */
+export function listTaxFiscalYears(): string[] {
+  const labels = new Set<string>([
+    currentFiscalYear().label,
+    ...listRedemptionDates().map((d) => fiscalYearOf(d).label),
+    ...listTaxPolicyYears(),
+  ]);
+  return [...labels].sort().reverse();
 }
 
 function computeSlabTax(
@@ -195,6 +229,8 @@ function computeSlabTax(
 }
 
 export interface RegimeComparison {
+  fiscalYear: FiscalYear;
+  policyFiscalYear: string;
   totalIncome: number;
   eightyCUsed: number;
   eightyDUsed: number;
@@ -206,19 +242,19 @@ export interface RegimeComparison {
 }
 
 /**
- * Old vs. new regime, computed from this FY's actual income + 80C/80D
- * utilization against the editable slabs/rates in tax_settings — not a
+ * Old vs. new regime, computed from the FY's actual income + 80C/80D
+ * utilization against that FY's editable slabs/rates — not a
  * generic rule of thumb. Section 87A is modeled as a flat cutoff (no
  * marginal relief above the threshold). See docs/prd/finance/tax-planning.md.
  */
-export function getRegimeComparison(): RegimeComparison {
-  const { start, end } = getCurrentFinancialYear();
-  const settings = getTaxSettings();
-  const trend = getMonthlyIncomeExpense(start, end);
+export function getRegimeComparison(fy: FiscalYear = currentFiscalYear()): RegimeComparison {
+  const settings = getTaxSettingsForYear(fy.label);
+  // getMonthlyIncomeExpense takes an exclusive end date.
+  const trend = getMonthlyIncomeExpense(fy.start, addDays(fy.end, 1));
   const totalIncome = trend.reduce((sum, r) => sum + r.income, 0);
 
-  const eightyCUsed = Math.min(get80cUtilization().used, settings.eightyCLimit);
-  const eightyDUsed = Math.min(get80dUtilization().used, settings.eightyDLimit);
+  const eightyCUsed = Math.min(get80cUtilization(fy).used, settings.eightyCLimit);
+  const eightyDUsed = Math.min(get80dUtilization(fy).used, settings.eightyDLimit);
 
   const oldTaxableIncome = Math.max(
     0,
@@ -226,8 +262,8 @@ export function getRegimeComparison(): RegimeComparison {
   );
   const newTaxableIncome = Math.max(0, totalIncome - settings.standardDeductionNew);
 
-  const oldSlabs = listTaxSlabs("old");
-  const newSlabs = listTaxSlabs("new");
+  const oldSlabs = getTaxSlabsForYear(fy.label, "old");
+  const newSlabs = getTaxSlabsForYear(fy.label, "new");
 
   let oldTax =
     oldTaxableIncome <= settings.rebate87aThresholdOld
@@ -248,6 +284,8 @@ export function getRegimeComparison(): RegimeComparison {
       : `The new regime's lower slab rates beat the old regime even after your 80C/80D deductions.`;
 
   return {
+    fiscalYear: fy,
+    policyFiscalYear: settings.fiscalYear,
     totalIncome,
     eightyCUsed,
     eightyDUsed,

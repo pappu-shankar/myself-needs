@@ -10,7 +10,7 @@ export function contributionLimitsRule(snapshot: FinanceSnapshot): Insight[] {
   const insights: Insight[] = [];
   if (snapshot.eightyC.used >= snapshot.eightyC.limit) {
     insights.push({
-      id: `80c-limit-reached:${snapshot.fy.label}`,
+      id: `80c-limit-reached:FY ${snapshot.fy.label}`,
       category: "compliance",
       severity: "info",
       message: `80C limit reached — ${formatAmount(snapshot.eightyC.used)} used against a ${formatAmount(snapshot.eightyC.limit)} limit.`,
@@ -19,7 +19,7 @@ export function contributionLimitsRule(snapshot: FinanceSnapshot): Insight[] {
   }
   if (snapshot.eightyD.used >= snapshot.eightyD.limit) {
     insights.push({
-      id: `80d-limit-reached:${snapshot.fy.label}`,
+      id: `80d-limit-reached:FY ${snapshot.fy.label}`,
       category: "compliance",
       severity: "info",
       message: `80D limit reached — ${formatAmount(snapshot.eightyD.used)} used against a ${formatAmount(snapshot.eightyD.limit)} limit.`,
@@ -31,8 +31,13 @@ export function contributionLimitsRule(snapshot: FinanceSnapshot): Insight[] {
 
 /** Close to using up the equity LTCG exemption for the year — realizing more gains now would start owing tax. Already-exceeded is the tax estimate's own job to surface (its tax number is already nonzero), not this rule's. */
 export function ltcgApproachingRule(snapshot: FinanceSnapshot): Insight[] {
-  const { ltcgEquity, taxEquityLtcg } = snapshot.capitalGains;
-  const exemption = snapshot.taxSettings.equityLtcgExemption;
+  // FY-scoped: only this FY's redemptions, against this FY's exemption.
+  const {
+    ltcgEquity,
+    taxEquityLtcg,
+    equityLtcgExemption: exemption,
+    fiscalYear,
+  } = snapshot.capitalGains;
   if (taxEquityLtcg > 0 || exemption <= 0) return [];
 
   const usedPercent = (ltcgEquity / exemption) * 100;
@@ -40,11 +45,11 @@ export function ltcgApproachingRule(snapshot: FinanceSnapshot): Insight[] {
 
   return [
     {
-      id: `ltcg-approaching:${snapshot.fy.label}:${Math.round(usedPercent)}`,
+      id: `ltcg-approaching:FY ${fiscalYear.label}:${Math.round(usedPercent)}`,
       category: "compliance",
       severity: "info",
-      message: `Equity LTCG for ${snapshot.fy.label} is at ${formatAmount(ltcgEquity)} of your ${formatAmount(exemption)} exemption (${usedPercent.toFixed(0)}%) — more gains realized now would start owing tax.`,
-      link: "/finance/tax/capital-gains",
+      message: `Equity LTCG for FY ${fiscalYear.label} is at ${formatAmount(ltcgEquity)} of your ${formatAmount(exemption)} exemption (${usedPercent.toFixed(0)}%) — more gains realized now would start owing tax.`,
+      link: `/finance/tax/capital-gains?fy=${fiscalYear.label}`,
     },
   ];
 }

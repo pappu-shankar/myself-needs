@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { notFound } from "next/navigation";
 import { getPhoto } from "@/modules/fashion";
 import { PageHeader } from "@/components/ui/page-header";
@@ -14,7 +14,7 @@ export default async function PhotoEditorPage({
 }: {
   params: Promise<{ photoId: string }>;
 }) {
-  await requireUnlocked();
+  await requireUser();
   const { photoId } = await params;
   const id = Number(photoId);
   const photo = Number.isInteger(id) ? getPhoto(id) : null;

@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getConfig } from "@/modules/core/env/config";
+import { decideRequest, HSTS_VALUE, wantsHsts } from "@/modules/core/env/edge-policy";
 
 /**
  * Two protections in front of every request:
@@ -8,16 +10,14 @@ import { NextResponse, type NextRequest } from "next/server";
  *    127.0.0.1). Such requests carry the attacker's hostname in `Host`, so
  *    anything that isn't a loopback name is refused before it reaches a page,
  *    Server Action or route handler.
- * 2. Content-Security-Policy with a per-request nonce. `connect-src 'self'` means
+ *    The allow-list is loopback plus the configured public host (see
+ *    modules/core/env/config.ts); the decision logic lives in edge-policy.ts.
+ * 2. State-changing requests (anything but GET/HEAD) must carry an allowed
+ *    `Origin`, and auth-form POSTs are capped at 64 KB.
+ * 3. Content-Security-Policy with a per-request nonce. `connect-src 'self'` means
  *    no script on the page can send data anywhere else — including the usage
  *    telemetry beacon bundled inside MediaPipe.
  */
-
-const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
-function hostnameOf(hostHeader: string): string {
-  return hostHeader.toLowerCase().replace(/:\d+$/, "");
-}
 
 function contentSecurityPolicy(nonce: string, isDev: boolean): string {
   return [
@@ -40,9 +40,21 @@ function contentSecurityPolicy(nonce: string, isDev: boolean): string {
 }
 
 export function proxy(request: NextRequest) {
-  if (!LOOPBACK_HOSTNAMES.has(hostnameOf(request.headers.get("host") ?? ""))) {
-    return new NextResponse("This app only accepts requests addressed to 127.0.0.1 or localhost.", {
-      status: 403,
+  const config = getConfig();
+  const decision = decideRequest(
+    {
+      method: request.method,
+      pathname: request.nextUrl.pathname,
+      host: request.headers.get("host"),
+      origin: request.headers.get("origin"),
+      contentLength: request.headers.get("content-length"),
+    },
+    config,
+  );
+  if (!decision.ok) {
+    return new NextResponse(decision.message, {
+      status: decision.status,
+      headers: { "Cache-Control": "no-store" },
     });
   }
 
@@ -60,6 +72,8 @@ export function proxy(request: NextRequest) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  response.headers.set("Cache-Control", "no-store");
+  if (wantsHsts(config)) response.headers.set("Strict-Transport-Security", HSTS_VALUE);
   response.headers.set("Permissions-Policy", "geolocation=(), microphone=(), payment=(), usb=()");
   return response;
 }

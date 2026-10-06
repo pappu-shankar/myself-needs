@@ -28,6 +28,8 @@ const TYPE_LABEL: Record<string, string> = {
   scheme_template: "Scheme templates",
   metric: "Health metrics",
   medication: "Medications",
+  routine: "Gym routines",
+  exercise: "Exercises",
   goal: "Goals",
   house_project: "House projects",
   room: "Rooms",
@@ -89,7 +91,7 @@ export function SearchPalette({
         <AutocompletePositioner className="fixed top-[15%] left-1/2 -translate-x-1/2">
           <AutocompletePopup>
             <div className="border-b p-2">
-              <AutocompleteInput placeholder="Search accounts, holdings, goals, medications…" />
+              <AutocompleteInput placeholder="Search accounts, holdings, goals, exercises…" />
             </div>
             <AutocompleteEmpty>
               {query.trim()

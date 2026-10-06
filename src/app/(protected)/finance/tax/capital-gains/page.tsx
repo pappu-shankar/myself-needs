@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
-import { getCapitalGainsEstimate } from "@/modules/finance";
+import { currentFiscalYear, getCapitalGainsEstimate } from "@/modules/finance";
+import { formatAmount } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,24 +15,28 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { FiscalYearPicker } from "../fiscal-year-picker";
+import { PolicyNote } from "../policy-note";
+import { fiscalYearOptions, selectedFiscalYear } from "../selected-fiscal-year";
 
 export const metadata: Metadata = {
   title: "Capital gains — Personal Life OS",
 };
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-export default async function CapitalGainsPage() {
-  await requireUnlocked();
-  const capitalGains = getCapitalGainsEstimate();
+export default async function CapitalGainsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fy?: string | string[] }>;
+}) {
+  await requireUser();
+  const fy = selectedFiscalYear((await searchParams).fy);
+  const capitalGains = getCapitalGainsEstimate(fy);
 
   return (
     <>
       <PageHeader
         title="Capital gains"
-        description="FIFO-matched capital gains estimate for the current financial year."
+        description={`FIFO-matched capital gains estimate for redemptions in FY ${fy.label} (${fy.start} to ${fy.end}).`}
         actions={
           <Button variant="outline" nativeButton={false} render={<Link href="/finance/tax" />}>
             Back to Tax planning
@@ -39,12 +44,24 @@ export default async function CapitalGainsPage() {
         }
       />
 
+      <FiscalYearPicker
+        basePath="/finance/tax/capital-gains"
+        years={fiscalYearOptions(fy)}
+        selected={fy.label}
+        current={currentFiscalYear().label}
+      />
+      <PolicyNote fiscalYear={fy.label} policyFiscalYear={capitalGains.policyFiscalYear} />
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-base font-medium">Capital gains estimate</CardTitle>
+          <CardTitle className="text-base font-medium">
+            Capital gains estimate — FY {fy.label}
+          </CardTitle>
           <p className="text-muted-foreground mt-1 text-sm">
-            LTCG = long-term capital gains, STCG = short-term. &quot;Other&quot; covers non-equity
-            holdings — debt, gold, and the rest.
+            LTCG = long-term capital gains (held for more than the threshold in Settings), STCG =
+            short-term. &quot;Other&quot; covers non-equity holdings — debt, gold, and the rest.
+            Equity LTCG is taxed only above the {formatAmount(capitalGains.equityLtcgExemption)}{" "}
+            yearly exemption.
           </p>
         </CardHeader>
         <CardContent>
@@ -75,7 +92,7 @@ export default async function CapitalGainsPage() {
 
           {capitalGains.events.length === 0 ? (
             <EmptyState
-              title="No matched gains yet"
+              title={`No matched gains in FY ${fy.label}`}
               description="Log a redemption cash flow against a holding to see FIFO-matched (first-in-first-out) gains."
             />
           ) : (

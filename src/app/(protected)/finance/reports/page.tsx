@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import {
   getIncomeExpenseReport,
@@ -26,7 +26,7 @@ function formatPercent(rate: number | null) {
 }
 
 export default async function ReportsPage() {
-  await requireUnlocked();
+  await requireUser();
   const { trend, categoryBreakdown, savingsRate } = getIncomeExpenseReport();
   const emergencyFundMonths = getEmergencyFundMonths();
   const allocation = getCurrentAllocation();

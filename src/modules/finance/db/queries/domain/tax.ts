@@ -1,12 +1,13 @@
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "@/modules/core/db/client";
 import { paiseToRupees } from "../../schema/money";
 import { investmentHoldings } from "../../schema/domain/investment-holdings";
 import { investmentCashFlows } from "../../schema/domain/investment-cash-flows";
 import { insurancePolicies } from "../../schema/domain/insurance-policies";
 import { transactions } from "../../schema/domain/transactions";
+import { UNIT_PRICED_TYPES } from "../../../types";
 
-/** Contributions (money in) within [startDate, endDate) to holdings flagged 80C-eligible. */
+/** Contributions (money in) within [startDate, endDate] (both inclusive) to holdings flagged 80C-eligible. */
 export function get80cHoldingContributions(startDate: string, endDate: string): number {
   const row = getDb()
     .select({
@@ -19,7 +20,7 @@ export function get80cHoldingContributions(startDate: string, endDate: string): 
         eq(investmentHoldings.is80cEligible, true),
         sql`${investmentCashFlows.amount} < 0`,
         gte(investmentCashFlows.date, startDate),
-        lt(investmentCashFlows.date, endDate),
+        lte(investmentCashFlows.date, endDate),
       ),
     )
     .get();
@@ -27,9 +28,9 @@ export function get80cHoldingContributions(startDate: string, endDate: string): 
 }
 
 /**
- * Confirmed premium transactions within [startDate, endDate) for insurance
- * policies flagged for the given section — only policies linked to a
- * recurring rule contribute here, since that's the only trail that ties a
+ * Confirmed premium transactions within [startDate, endDate] (both inclusive)
+ * for insurance policies flagged for the given section — only policies linked
+ * to a recurring rule contribute here, since that's the only trail that ties a
  * real transaction back to a specific policy. See docs/prd/finance/tax-planning.md.
  */
 export function getInsurancePremiumsPaid(
@@ -47,8 +48,24 @@ export function getInsurancePremiumsPaid(
       eq(transactions.recurringRuleId, insurancePolicies.recurringRuleId),
     )
     .where(
-      and(eq(flagColumn, true), gte(transactions.date, startDate), lt(transactions.date, endDate)),
+      and(eq(flagColumn, true), gte(transactions.date, startDate), lte(transactions.date, endDate)),
     )
     .get();
   return row?.total ?? 0;
+}
+
+/** Distinct dates of redemptions from unit-priced holdings — the only flows that can produce a capital gain. */
+export function listRedemptionDates(): string[] {
+  return getDb()
+    .selectDistinct({ date: investmentCashFlows.date })
+    .from(investmentCashFlows)
+    .innerJoin(investmentHoldings, eq(investmentCashFlows.holdingId, investmentHoldings.id))
+    .where(
+      and(
+        eq(investmentCashFlows.flowType, "redemption"),
+        inArray(investmentHoldings.type, [...UNIT_PRICED_TYPES]),
+      ),
+    )
+    .all()
+    .map((r) => r.date);
 }

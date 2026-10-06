@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getAccounts } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -25,7 +25,7 @@ function formatAmount(amount: number) {
 }
 
 export default async function AccountsPage() {
-  await requireUnlocked();
+  await requireUser();
   const accounts = getAccounts();
 
   return (

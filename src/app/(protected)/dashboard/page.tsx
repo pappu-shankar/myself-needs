@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import { getTotalBalance } from "@/modules/finance";
-import { getLatestMetricSummary } from "@/modules/health";
+import { getGymDashboardSummary, getLatestMetricSummary } from "@/modules/health";
 import { getActiveMedicationsCount } from "@/modules/mental";
 import { getActiveGoalsCount } from "@/modules/plans";
+import Link from "next/link";
 import { todayIso } from "@/lib/dates";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,20 +14,21 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardPage() {
-  await requireUnlocked();
+  await requireUser();
   const totalBalance = getTotalBalance();
   const latestMetric = getLatestMetricSummary();
   const today = todayIso();
   const activeMedicationsCount = getActiveMedicationsCount(today);
   const activeGoalsCount = getActiveGoalsCount();
+  const gym = getGymDashboardSummary(today);
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        description="A cross-module overview — finance, health, mental, and plans."
+        description="A cross-module overview — finance, health, training, mental, and plans."
       />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Card>
           <CardHeader>
             <CardTitle className="text-muted-foreground text-sm font-medium">
@@ -58,6 +60,38 @@ export default async function DashboardPage() {
             ) : (
               <p className="text-muted-foreground text-sm">No entries yet</p>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-muted-foreground text-sm font-medium">
+              Training this week
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="tabular-nums text-2xl font-semibold">
+              {gym.sessionsThisWeek}
+              <span className="text-muted-foreground text-base font-normal">
+                {" "}
+                / {gym.weeklyGoal}
+              </span>
+            </p>
+            <p className="text-muted-foreground text-sm">
+              {gym.activeWorkoutName ? (
+                <Link href="/health/gym/workout" className="text-primary hover:underline">
+                  {gym.activeWorkoutName} in progress
+                </Link>
+              ) : gym.trainedToday ? (
+                "Trained today"
+              ) : gym.todayRoutineName ? (
+                <Link href="/health/gym/workout" className="text-primary hover:underline">
+                  Today: {gym.todayRoutineName}
+                </Link>
+              ) : (
+                "Nothing planned today"
+              )}
+            </p>
           </CardContent>
         </Card>
 

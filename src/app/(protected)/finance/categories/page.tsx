@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import Link from "next/link";
 import { getCategories } from "@/modules/finance";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function CategoriesPage() {
-  await requireUnlocked();
+  await requireUser();
   const categories = getCategories();
 
   return (

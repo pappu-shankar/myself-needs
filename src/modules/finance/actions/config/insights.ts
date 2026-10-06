@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { defineFormAction } from "@/modules/core/action/define-action";
 import { setInsightsSettings } from "../../service/config/insights-settings";
 
 const settingsSchema = z.object({
@@ -18,20 +18,21 @@ export interface UpdateInsightsSettingsState {
   error?: string;
 }
 
-export async function updateInsightsSettingsAction(
-  _prevState: UpdateInsightsSettingsState,
-  formData: FormData,
-): Promise<UpdateInsightsSettingsState> {
-  await requireUnlocked();
-  const parsed = settingsSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid settings" };
-  }
+export const updateInsightsSettingsAction = defineFormAction(
+  async (
+    _prevState: UpdateInsightsSettingsState,
+    formData: FormData,
+  ): Promise<UpdateInsightsSettingsState> => {
+    const parsed = settingsSchema.safeParse(Object.fromEntries(formData.entries()));
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid settings" };
+    }
 
-  setInsightsSettings(parsed.data);
-  // Thresholds feed the insight rules themselves, so the list on /finance/insights
-  // needs refreshing too, not just this settings page.
-  revalidatePath("/finance/insights");
-  revalidatePath("/finance/settings");
-  return {};
-}
+    setInsightsSettings(parsed.data);
+    // Thresholds feed the insight rules themselves, so the list on /finance/insights
+    // needs refreshing too, not just this settings page.
+    revalidatePath("/finance/insights");
+    revalidatePath("/finance/settings");
+    return {};
+  },
+);

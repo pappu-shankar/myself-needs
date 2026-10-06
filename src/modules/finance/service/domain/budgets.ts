@@ -1,8 +1,11 @@
-import { insertBudget, listBudgetsForMonth, type NewBudget } from "../../db/queries/domain/budgets";
+import { upsertBudget, listBudgetsForMonth, type NewBudget } from "../../db/queries/domain/budgets";
 import { todayIso } from "@/lib/dates";
 
+/** Setting a budget for a category/effective-date pair that already exists
+ * updates its limit rather than erroring or creating a second row for the
+ * same category — see `upsertBudget`. */
 export function createBudget(entry: NewBudget) {
-  return insertBudget(entry);
+  return upsertBudget(entry);
 }
 
 /** `month` as "YYYY-MM"; defaults to the current month. */

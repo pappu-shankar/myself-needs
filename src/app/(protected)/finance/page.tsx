@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { requireUnlocked } from "@/modules/core/session/guard";
+import { requireUser } from "@/modules/core/session/guard";
 import {
   getAccounts,
   getCategories,
-  getTransactionsPage,
+  getHasAnyTransactions,
   getBudgetsForMonth,
   getTotalBalance,
   getNetWorthTrend,
@@ -94,10 +94,10 @@ const NAV_ITEMS = [
 ] as const;
 
 export default async function FinancePage() {
-  await requireUnlocked();
+  await requireUser();
   const accounts = getAccounts();
   const categories = getCategories();
-  const { total } = getTransactionsPage(0);
+  const hasTransactions = getHasAnyTransactions();
   const budgets = getBudgetsForMonth();
   const totalBalance = getTotalBalance();
   const netWorthTrend = getNetWorthTrend();
@@ -121,7 +121,7 @@ export default async function FinancePage() {
       label: "Log a transaction",
       description: "An income, expense, or transfer against an account and category.",
       href: "/finance/transactions",
-      done: total > 0,
+      done: hasTransactions,
     },
     {
       label: "Set a budget",
