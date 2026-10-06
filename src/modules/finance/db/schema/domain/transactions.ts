@@ -4,6 +4,9 @@ import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
 import { recurringRules } from "./recurring-rules";
+import { currencyColumn, minorAmount } from "../currency";
+import { provenanceColumns } from "../provenance";
+import { voidableColumns } from "../lifecycle";
 
 /**
  * income/expense: account_id + category_id.
@@ -21,6 +24,12 @@ export const transactions = sqliteTable(
     toAccountId: integer("to_account_id").references(() => accounts.id),
     categoryId: integer("category_id").references(() => categories.id),
     amount: money("amount").notNull(),
+    currency: currencyColumn(),
+    /** Cross-currency transfers carry both legs, so the rate that actually
+     * applied is implied by the two amounts and never needs a lookup — the
+     * truth is what the bank did. Null for same-currency transfers. */
+    toAmountMinor: minorAmount("to_amount_minor"),
+    toCurrency: text("to_currency"),
     date: text("date").notNull(),
     note: text("note"),
     /** Set only when this transaction was created by confirming a recurring
@@ -31,6 +40,9 @@ export const transactions = sqliteTable(
      * period this transaction settles. Unique per rule, so confirming the same
      * period twice (double submit, two tabs) can't double-post. */
     periodStart: text("period_start"),
+    ...provenanceColumns({ source: "user", method: "manual", confidence: "reported" }),
+    ...voidableColumns(),
+
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),

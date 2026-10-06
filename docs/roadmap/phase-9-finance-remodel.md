@@ -2,7 +2,7 @@
 
 **Related:** [../../ROADMAP.md](../../ROADMAP.md) · [../prd/finance/](../prd/finance/) · [phase-2-finance.md](./phase-2-finance.md) · [../architecture/finance-module-assessment.md](../architecture/finance-module-assessment.md)
 
-**Status:** Phase 0 complete (tracking doc, PRD rewrite, architecture conventions). Phase 1 not started — it is cut as a feature branch, see Shipping.
+**Status:** Phase 0 complete. Phase 1 part-landed: the additive foundation (new tables, columns, backfills, migration `0027`) is in and uncommitted on `main`. The destructive and call-site steps are blocked — see the note under Phase 1.
 
 ## What this phase is
 
@@ -48,21 +48,25 @@ Docs only. Safe to do on `main` while Phase 1's branch is open.
 
 **Highest risk in the whole phase. Budget 3 weeks. Ships big-bang on a feature branch** (see Shipping). Nothing else is buildable until this lands.
 
+**Blocked, and why.** Steps 1.7 and 1.8 — retiring `money.ts` and converting the ~46 rupee-float call sites — land in `db/queries/domain/*` and `service/domain/*`, which is exactly where the in-flight Phase 8 work sits (82 finance files, +3698/−1183, uncommitted). Doing both at once means resolving a conflict across dozens of files twice. Finance *schema* was clean, which is why the additive foundation could land ahead of it. Steps 1.2, 1.6's drops, 1.7, 1.8, 1.9 and 1.10 all wait on the Phase 8 finance work being committed.
+
+**Deviation from the planned six-migration split.** It became one migration (`0027`). Everything that could land additively had no destructive step to isolate, and the hazards the split existed to make separately testable — units scaling and the `finance_accounts` rebuild — are precisely the parts deferred. They will still be their own migrations with their own journal cut points.
+
 Six sequenced migrations in one release. Order is load-bearing: entities before any `entity_id`; import batches before `import_batch_id`; the `finance_accounts` rebuild last so it rebuilds exactly once.
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | Migration `finance_currency` — `base_currency` on settings; `currency` on the 6 money tables; `to_amount_minor`/`to_currency` on transactions + recurring rules; `finance_fx_rates(base, quote, date, rate_scaled, source)`; currency on tax-settings/slabs and `plans_goals` | Not started |
-| 1.2 | Migration `finance_units_scaling` — `units_scaled` (1e6), `price_scaled`, `price_currency`; rebuild of holdings + valuations | Not started |
-| 1.3 | Migration `finance_entities` — entities / `entity_stakes` (integer basis points, dated) / institutions; seed `Self`; nullable `entity_id`/`institution_id` + backfill; `liquidity`, `kind`, `normal_balance` | Not started |
-| 1.4 | Migration `finance_provenance` — `source`, `method`, `confidence`, `as_of`, `import_batch_id`, `external_ref` as inline columns; import-batch tables | Not started |
-| 1.5 | Migration `finance_lifecycle` — `voided_at`, `void_reason`, `superseded_by_id`, `updated_at` on the two ledger tables; `archived_at` on accounts/holdings/policies/entities | Not started |
-| 1.6 | Migration `finance_loan_terms` — create `finance_loan_terms`/`finance_credit_terms`, `INSERT … SELECT`, then drop the 5 per-type columns from `finance_accounts`. **Must be last.** | Not started |
-| 1.7 | Retire `db/schema/money.ts`; introduce `(amount_minor, currency)` pairs and a `formatMoney({ minor, currency })` in `src/lib/format.ts`; delete the 11 copy-pasted local `formatAmount` helpers | Not started |
+| 1.1 | Migration `finance_currency` — `base_currency` on settings; `currency` on the 6 money tables; `to_amount_minor`/`to_currency`; `finance_fx_rates`; currency on tax-settings/slabs and `plans_goals` | Done for the money tables, settings and `finance_fx_rates`; `schema/currency.ts` holds `CURRENCIES`, `CURRENCY_EXPONENT` and `FX_RATE_SCALE`. **Outstanding:** tax-settings/slabs and `plans_goals` are `real` rupees, so they need the money conversion and go with 1.7/1.8 |
+| 1.2 | Migration `finance_units_scaling` — `units_scaled` (1e6), `price_scaled`, `price_currency`; rebuild of holdings + valuations | `price_currency` done. The scaled-integer rebuild is **deferred**: it changes how every holding value is computed, so it belongs with 1.7/1.8 |
+| 1.3 | Migration `finance_entities` — entities / `entity_stakes` (integer basis points, dated) / institutions; seed `Self`; nullable `entity_id`/`institution_id` + backfill; `liquidity`, `kind`, `normal_balance` | Done — all three tables; `Self` seeded at 10000 bps from the `1970-01-01` sentinel; accounts and holdings attributed; `kind`/`normal_balance` backfilled from the existing `LIABILITY_TYPES` set with the stored sign untouched; `liquidity` mapped per type. Institutions seeded from distinct insurance `provider` and linked, accounts/holdings left NULL deliberately. Covered by `foundation-migration.test.ts` |
+| 1.4 | Migration `finance_provenance` — `source`, `method`, `confidence`, `as_of`, `import_batch_id`, `external_ref` as inline columns; import-batch tables | Columns done on transactions, cash flows, valuations, accounts and policies via `schema/provenance.ts`. `as_of` backfilled from each row's own date, never `now`, asserted in the test. Valuations default to `unknown` on all three provenance fields so the migration never fabricates provenance. **Outstanding:** the `import_batch` table, which belongs with Phase 4 |
+| 1.5 | Migration `finance_lifecycle` — `voided_at`, `void_reason`, `superseded_by_id`, `updated_at` on the two ledger tables; `archived_at` on accounts/holdings/policies/entities | Done via `schema/lifecycle.ts`. Columns only: no query filters on `voided_at` yet, which is Phase 2 and is where the both-legs-of-the-UNION hazard lives |
+| 1.6 | Migration `finance_loan_terms` — create `finance_loan_terms`/`finance_credit_terms`, `INSERT … SELECT`, then drop the 5 per-type columns from `finance_accounts`. **Must be last.** | Tables created, plus the `revolving_credit` account type and `apr_bps`. The `INSERT … SELECT` and the column drops are **deferred**: dropping rebuilds `finance_accounts` and breaks every reader, so it stays last as planned |
+| 1.7 | Retire `db/schema/money.ts`; introduce `(amount_minor, currency)` pairs and a `formatMoney({ minor, currency })` in `src/lib/format.ts`; delete the 11 copy-pasted local `formatAmount` helpers | `formatMoney`/`formatMoneyAmount` done in `src/lib/format.ts` (additive, nothing existing changed), with per-currency locale defaults. **Blocked:** retiring `money.ts` and deleting the 11 local helpers touches the Phase 8 files |
 | 1.8 | Convert the ~46 call sites that assume rupee floats: 8 schema files, 9 query files (incl. the 4 `.mapWith(paiseToRupees)` raw-SQL sums), and the services that legitimately produce float money (`investments.ts` accrual, `loans.ts`, `returns.ts`) | Not started |
-| 1.9 | `valueOfUnits()` helper doing the one `units_scaled × price_scaled` multiply in `BigInt` (overflows 2^53 at realistic position sizes); BigInt never leaves the helper | Not started |
+| 1.9 | `valueOfUnits()` helper doing the one `units_scaled × price_scaled` multiply in `BigInt` (overflows 2^53 at realistic position sizes); BigInt never leaves the helper | Done — `service/utility/units.ts`, over a shared `integer-math.ts` (`divRound`, `pow10`, `toSafeNumber`). Also landed alongside: `ownership.ts` (bps proration + the fixed consolidation order) and `fx.ts` (dated resolution, inversion, pivot triangulation, never-invent-a-rate). 38 tests |
 | 1.10 | Reconciliation queue for what cannot be migrated: foreign-currency holdings, entity attribution, account/holding institution, pre-first-rate FX, valuation provenance | Not started |
-| 1.11 | The 5 migration tests (see Verification) — the gate on merging the branch | Not started |
+| 1.11 | The 5 migration tests (see Verification) — the gate on merging the branch | 3 of 5 written in `foundation-migration.test.ts`: backfill correctness, the empty new vault under `foreign_keys = ON` (the pragma-divergence guard), and seed idempotency. The other 2 cover migrations that do not exist yet |
 
 ## Phase 2 — Record lifecycle and provenance surfaces
 
@@ -201,6 +205,10 @@ Every entry records the reason. Argue with the reason, not the conclusion.
 39. **Liquidity class applies to holdings as well as accounts**, defaulted from holding type. Without it an illiquid private holding is indistinguishable from a listed one in every liquidity-aware figure.
 40. **`linked_goal_id` becomes a real foreign key.** It was a plain ID with no FK only because goals lived in another module; `finance_goals` is in the same module, so the constraint is now available and the migration's `foreign_key_check` gate can enforce it.
 41. **Emergency-fund coverage lives in cash flow**, and must always state both halves of its ratio — the `liquid` class only, and a trailing three *complete* months of expense, so a reading taken on the 2nd is not distorted by two days of data.
+
+42. **One shared `integer-math.ts` for exact money arithmetic**, holding `divRound`, `pow10` and `toSafeNumber`. Three modules had independently grown the same `divRound`. Rounding is **half away from zero**, not JavaScript's half-up, so a credit and its matching debit round to the same magnitude — otherwise a reversal fails to net to zero at the half-paisa boundary. BigInt is written in constructor form (`BigInt(0)`, `pow10(n)`) rather than literals (`0n`, `10n ** x`) because the project targets ES2017; `lib` already includes `esnext`, so only the literal syntax is unavailable. A target bump was deliberately not taken — it is a project-wide change for a local need.
+43. **An FX rate is carried as an exact fraction (`rateNum`/`rateDen`), not a single scaled number.** Found by a test, in my own first implementation: inverting or triangulating a rate quantised the quotient to 8 decimal places *before* multiplying the amount, a relative error around 1e-7 — roughly ₹1,800 on a ₹1,000 Cr position. Keeping the fraction means exactly one rounding, at the end. `rateScaled` is retained for display only and must never be used for arithmetic. There is a regression test naming this.
+44. **Each currency formats in its own conventional locale, not the reader's.** `Intl` treats locale and currency independently, so `en-IN` plus USD renders `$1,23,456.70` — Indian digit grouping on a dollar figure. Spec-correct, and wrong to every actual reader. `formatMoney` therefore defaults the locale per currency (INR → en-IN, USD → en-US, …) with an explicit override available. Also caught by a test rather than by review.
 
 ## Open questions
 

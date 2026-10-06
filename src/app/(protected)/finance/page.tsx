@@ -3,7 +3,7 @@ import { requireUser } from "@/modules/core/session/guard";
 import {
   getAccounts,
   getCategories,
-  getHasAnyTransactions,
+  getTransactionsCount,
   getBudgetsForMonth,
   getTotalBalance,
   getNetWorthTrend,
@@ -97,7 +97,7 @@ export default async function FinancePage() {
   await requireUser();
   const accounts = getAccounts();
   const categories = getCategories();
-  const hasTransactions = getHasAnyTransactions();
+  const transactionCount = getTransactionsCount();
   const budgets = getBudgetsForMonth();
   const totalBalance = getTotalBalance();
   const netWorthTrend = getNetWorthTrend();
@@ -121,7 +121,7 @@ export default async function FinancePage() {
       label: "Log a transaction",
       description: "An income, expense, or transfer against an account and category.",
       href: "/finance/transactions",
-      done: hasTransactions,
+      done: transactionCount > 0,
     },
     {
       label: "Set a budget",
@@ -181,7 +181,7 @@ export default async function FinancePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="tabular-nums text-2xl font-semibold">{total}</p>
+            <p className="tabular-nums text-2xl font-semibold">{transactionCount}</p>
           </CardContent>
         </Card>
       </div>

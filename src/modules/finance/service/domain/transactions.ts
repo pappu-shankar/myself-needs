@@ -59,9 +59,13 @@ export function getTransactionsPage(params: TransactionsCursorPageParams = {}, p
   return listTransactionsByCursor(params, pageSize);
 }
 
+export function getTransactionsCount() {
+  return countTransactions();
+}
+
 /** Whether any transaction has ever been logged — for "getting started" style checks. */
 export function getHasAnyTransactions() {
-  return hasAnyTransactions();
+  return getTransactionsCount() > 0;
 }
 
 export function getRecentTransactions(limit = 5) {

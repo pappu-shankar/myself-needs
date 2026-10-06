@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { currencyColumn } from "../currency";
 
 /**
  * Single-row settings, scoped to finance (not a cross-module settings
@@ -11,6 +12,9 @@ import { sql } from "drizzle-orm";
 export const financeSettings = sqliteTable("finance_settings", {
   id: integer("id").primaryKey(),
   dateOfBirth: text("date_of_birth"),
+  /** Reporting currency. A read-time display setting only — never written
+   * into a value row, so switching it re-converts and moves no history. */
+  baseCurrency: currencyColumn("base_currency"),
   gettingStartedDismissed: integer("getting_started_dismissed", { mode: "boolean" })
     .notNull()
     .default(false),

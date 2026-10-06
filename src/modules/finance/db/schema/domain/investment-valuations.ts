@@ -1,6 +1,8 @@
 import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { investmentHoldings } from "./investment-holdings";
+import { currencyColumn } from "../currency";
+import { provenanceColumns } from "../provenance";
 
 /**
  * Only for unit-priced holdings (equity, mutual funds, gold, bonds) — current
@@ -17,6 +19,12 @@ export const investmentValuations = sqliteTable(
       .references(() => investmentHoldings.id),
     date: text("date").notNull(),
     pricePerUnit: real("price_per_unit").notNull(),
+    priceCurrency: currencyColumn("price_currency"),
+
+    /** Defaults to `unknown`, not `manual`: in pre-existing data a refreshed
+     * NAV and a hand-typed price are indistinguishable, and inventing
+     * provenance is worse than admitting there is none. */
+    ...provenanceColumns({ source: "unknown", method: "unknown", confidence: "unknown" }),
 
     createdAt: text("created_at")
       .notNull()

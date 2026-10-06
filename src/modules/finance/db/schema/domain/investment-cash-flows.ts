@@ -2,6 +2,9 @@ import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core
 import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { investmentHoldings } from "./investment-holdings";
+import { currencyColumn } from "../currency";
+import { provenanceColumns } from "../provenance";
+import { voidableColumns } from "../lifecycle";
 
 /**
  * The one mechanism that covers every instrument type without bespoke
@@ -18,12 +21,16 @@ export const investmentCashFlows = sqliteTable(
       .references(() => investmentHoldings.id),
     date: text("date").notNull(),
     amount: money("amount").notNull(),
+    currency: currencyColumn(),
     /** Units bought (+) or redeemed (−) by this flow, for unit-priced holdings.
      * Null for legacy rows and non-unit holdings. */
     units: real("units"),
     flowType: text("flow_type", {
       enum: ["contribution", "redemption", "dividend", "interest", "maturity"],
     }).notNull(),
+
+    ...provenanceColumns({ source: "user", method: "manual", confidence: "reported" }),
+    ...voidableColumns(),
 
     createdAt: text("created_at")
       .notNull()

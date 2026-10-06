@@ -2,6 +2,11 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { recurringRules } from "./recurring-rules";
+import { entities } from "./entities";
+import { institutions } from "./institutions";
+import { currencyColumn } from "../currency";
+import { provenanceColumns } from "../provenance";
+import { archivableColumns } from "../lifecycle";
 
 /**
  * Optionally linked to a `recurring_rules` entry for its premium, so premium
@@ -14,7 +19,12 @@ import { recurringRules } from "./recurring-rules";
 export const insurancePolicies = sqliteTable("finance_insurance_policies", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   type: text("type", { enum: ["life", "health", "term", "vehicle", "other"] }).notNull(),
+  /** Free text, and the seed for `finance_institutions` — a distinct provider
+   * name is an insurer. Retained so existing rows keep reading correctly. */
   provider: text("provider").notNull(),
+  institutionId: integer("institution_id").references(() => institutions.id),
+  entityId: integer("entity_id").references(() => entities.id),
+  currency: currencyColumn(),
   name: text("name").notNull(),
   policyNumber: text("policy_number"),
   sumAssured: money("sum_assured"),
@@ -28,6 +38,9 @@ export const insurancePolicies = sqliteTable("finance_insurance_policies", {
   is80cEligible: integer("is_80c_eligible", { mode: "boolean" }).notNull().default(false),
   is80dEligible: integer("is_80d_eligible", { mode: "boolean" }).notNull().default(false),
   recurringRuleId: integer("recurring_rule_id").references(() => recurringRules.id),
+
+  ...provenanceColumns({ source: "user", method: "manual", confidence: "reported" }),
+  ...archivableColumns(),
 
   createdAt: text("created_at")
     .notNull()

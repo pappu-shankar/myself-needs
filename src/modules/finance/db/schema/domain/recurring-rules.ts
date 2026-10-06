@@ -3,6 +3,8 @@ import { money } from "../money";
 import { sql } from "drizzle-orm";
 import { accounts } from "./accounts";
 import { categories } from "./categories";
+import { currencyColumn, minorAmount } from "../currency";
+import { archivableColumns } from "../lifecycle";
 
 /**
  * Same account_id/to_account_id/category_id shape as `finance_transactions`
@@ -20,6 +22,9 @@ export const recurringRules = sqliteTable("finance_recurring_rules", {
   toAccountId: integer("to_account_id").references(() => accounts.id),
   categoryId: integer("category_id").references(() => categories.id),
   amount: money("amount").notNull(),
+  currency: currencyColumn(),
+  toAmountMinor: minorAmount("to_amount_minor"),
+  toCurrency: text("to_currency"),
   frequency: text("frequency", {
     enum: ["weekly", "monthly", "quarterly", "half_yearly", "yearly"],
   }).notNull(),
@@ -29,6 +34,11 @@ export const recurringRules = sqliteTable("finance_recurring_rules", {
 
   /** Points at `plans_goals.id` by plain value only — never a DB-level foreign key. See docs/prd/finance/goal-linked-investments.md. */
   linkedGoalId: integer("linked_goal_id"),
+
+  /** Paused rules stop producing due periods without rewriting any confirmed
+   * history. See docs/prd/finance/recurring-transactions.md. */
+  pausedAt: text("paused_at"),
+  ...archivableColumns(),
 
   createdAt: text("created_at")
     .notNull()

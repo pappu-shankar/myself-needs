@@ -14,6 +14,7 @@ export {
 export { getCategories, getCategoriesByType, createCategory } from "./service/domain/categories";
 export {
   getTransactionsPage,
+  getTransactionsCount,
   getHasAnyTransactions,
   getRecentTransactions,
   createTransaction,
