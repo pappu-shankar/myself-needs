@@ -1,4 +1,6 @@
 import { listAccounts, getAccountsTotalByCurrency } from "../../db/queries/domain/accounts";
+import { listHoldings } from "../../db/queries/domain/investments";
+import { allCashFlowsByHolding, allValuationsByHolding } from "../../db/queries/domain/net-worth";
 import { getBaseCurrency } from "../../db/queries/config/settings";
 import { listFxRatesAsOf } from "../../db/queries/config/fx-rates";
 import { addDays, addMonths, monthKey, startOfMonth, todayIso } from "@/lib/dates";
@@ -49,9 +51,21 @@ export function getNetWorthTrend(months = 12): NetWorthPoint[] {
   const baseCurrency = getBaseCurrency();
   // One read of the rate table for the whole trend. Rates for every month are
   // a subset of "everything on or before today", so a single query covers all
-  // of them — this is the first and cheapest of the batching steps the
-  // performance note calls for, before any thought of a cache.
+  // of them.
   const rates = listFxRatesAsOf(today);
+
+  // And one read of the ledger. This loop used to issue a cash-flow query and
+  // a valuation query per holding per month — about 757 queries and 24 full
+  // table scans at 30 holdings over a 12-month trend. The history is now read
+  // once and each month filters it by its own as-of date. Not a cache and not
+  // a snapshot (decision 16): still one read per request, still computed from
+  // the ledger every time, so a back-filled historical rate shows up
+  // immediately.
+  const holdings = listHoldings();
+  const preloaded = {
+    flowsByHolding: allCashFlowsByHolding(),
+    valuationsByHolding: allValuationsByHolding(),
+  };
   const points: NetWorthPoint[] = [];
 
   for (let i = months - 1; i >= 0; i--) {
@@ -59,15 +73,15 @@ export function getNetWorthTrend(months = 12): NetWorthPoint[] {
     const asOfDate = i === 0 ? today : addDays(addMonths(monthStart, 1), -1);
 
     const accountTotals = getAccountsTotalByCurrency(accountIds, asOfDate);
-    const holdings = getHoldingsTotalByCurrency(asOfDate);
+    const holdingTotals = getHoldingsTotalByCurrency(asOfDate, preloaded, holdings);
 
     points.push({
       month: monthKey(monthStart),
-      netWorth: aggregateToBase(mergeByCurrency(accountTotals, holdings.byCurrency), {
+      netWorth: aggregateToBase(mergeByCurrency(accountTotals, holdingTotals.byCurrency), {
         baseCurrency,
         asOf: asOfDate,
         rates,
-        confidenceByCurrency: combineConfidence(accountTotals, holdings.confidenceByCurrency),
+        confidenceByCurrency: combineConfidence(accountTotals, holdingTotals.confidenceByCurrency),
       }),
     });
   }

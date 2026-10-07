@@ -330,9 +330,45 @@ export type ValuableHolding = {
  * - Govt schemes: ledger balance with credited interest (`computeSchemeBalanceMinor`).
  * - Chit funds: net cash flow to date.
  */
-export function getHoldingValue(holding: ValuableHolding, asOfDate?: string): HoldingValue {
+/**
+ * Preloaded ledger data, so a caller valuing many holdings over many dates can
+ * read the database once instead of twice per holding per date.
+ *
+ * `getNetWorthTrend(12)` was issuing about 757 queries at 30 holdings — a month
+ * loop around a holding loop, each holding costing a cash-flow query and a
+ * valuation query. The valuation *rules* are per-type and long, so they are not
+ * duplicated for the batched path; the data access is injected instead, which
+ * keeps one implementation of what a holding is worth.
+ *
+ * Both lists must be the holding's **full** history. Filtering to the as-of
+ * date happens here, so one preload serves every month in a trend.
+ */
+export interface PreloadedValuation {
+  date: string;
+  priceScaled: number;
+  priceCurrency: Currency;
+  /** A valuation's own provenance confidence, which the holding's value
+   * inherits — so the batched path cannot quietly report a stronger
+   * confidence than the per-holding one. */
+  confidence: ConfidenceLevel;
+}
+
+export interface HoldingLedgerSource {
+  flowsByHolding: ReadonlyMap<number, LedgerFlow[]>;
+  valuationsByHolding: ReadonlyMap<number, PreloadedValuation[]>;
+}
+
+export function getHoldingValue(
+  holding: ValuableHolding,
+  asOfDate?: string,
+  preloaded?: HoldingLedgerSource,
+): HoldingValue {
   const effectiveDate = asOfDate ?? todayIso();
-  const cashFlows = listCashFlowsForHolding(holding.id, asOfDate);
+  const cashFlows = preloaded
+    ? (preloaded.flowsByHolding.get(holding.id) ?? []).filter(
+        (f) => asOfDate === undefined || f.date <= asOfDate,
+      )
+    : listCashFlowsForHolding(holding.id, asOfDate);
   const base = {
     unitsScaled: null,
     missing: null,
@@ -343,7 +379,13 @@ export function getHoldingValue(holding: ValuableHolding, asOfDate?: string): Ho
 
   if (UNIT_PRICED_TYPES.has(holding.type)) {
     const unitsScaled = unitsHeldScaled(holding, cashFlows);
-    const latest = getLatestValuation(holding.id, asOfDate);
+    // Latest valuation on or before the as-of date. The preloaded list is
+    // ordered ascending, so the last one that qualifies is the newest.
+    const latest = preloaded
+      ? (preloaded.valuationsByHolding.get(holding.id) ?? [])
+          .filter((v) => asOfDate === undefined || v.date <= asOfDate)
+          .at(-1)
+      : getLatestValuation(holding.id, asOfDate);
     const priceDate = latest?.date ?? null;
     if (unitsScaled === null) {
       return {
@@ -479,12 +521,16 @@ export interface HoldingsTotal {
  * into the currency they would have landed in, so an incomplete total still
  * says so).
  */
-export function getHoldingsTotalByCurrency(asOfDate: string): HoldingsTotal {
+export function getHoldingsTotalByCurrency(
+  asOfDate: string,
+  preloaded?: HoldingLedgerSource,
+  holdings?: readonly ValuableHolding[],
+): HoldingsTotal {
   const byCurrency = new Map<Currency, number>();
   const levels = new Map<Currency, ConfidenceLevel[]>();
 
-  for (const holding of listHoldings()) {
-    const value = getHoldingValue(holding, asOfDate);
+  for (const holding of holdings ?? listHoldings()) {
+    const value = getHoldingValue(holding, asOfDate, preloaded);
     byCurrency.set(value.currency, (byCurrency.get(value.currency) ?? 0) + value.currentValueMinor);
     levels.set(value.currency, [...(levels.get(value.currency) ?? []), value.confidence]);
   }
