@@ -10,6 +10,17 @@ export const categories = sqliteTable("finance_categories", {
   parentCategoryId: integer("parent_category_id").references((): AnySQLiteColumn => categories.id),
 
   /**
+   * Marks a category as tax paid, so attribution can separate it from
+   * lifestyle spending.
+   *
+   * A flag rather than a name match: "Income tax", "TDS", "Advance tax" and
+   * "Self-assessment" are all tax and none of them share a substring, and a
+   * name-matching rule would silently reclassify a category the day someone
+   * renamed it. See docs/prd/finance/wealth-history.md § Attribution.
+   */
+  isTax: integer("is_tax", { mode: "boolean" }).notNull().default(false),
+
+  /**
    * Migration 0027 gave every other descriptive table an `archived_at` and
    * missed this one, so a category that history referenced had no retire path
    * at all: it could be renamed but never hidden from the pickers. The

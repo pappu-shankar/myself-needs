@@ -94,6 +94,14 @@ export {
   type NetWorthComponent,
 } from "./service/domain/net-worth-scopes";
 export {
+  /** Net worth over time, and what moved it. See
+   * docs/prd/finance/wealth-history.md. */
+  getWealthHistory,
+  getWealthAttribution,
+  type WealthPoint,
+  type WealthAttribution,
+} from "./service/domain/wealth-history";
+export {
   getGoals,
   getGoal,
   createGoal,
