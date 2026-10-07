@@ -105,6 +105,14 @@ export {
   type FundingPlan,
 } from "./service/domain/goals";
 export { getIncomeExpenseReport, getEmergencyFundMonths } from "./service/domain/reports";
+export {
+  /** Operating / investing / financing — the split that lets the app say what
+   * was actually free to invest. See docs/prd/finance/cash-flow.md. */
+  getCashFlowStatement,
+  getPeriodNetByCurrency,
+  type CashFlowStatement,
+  type FlowSide,
+} from "./service/domain/cash-flow";
 export { getCurrentAllocation, getAllocationReport } from "./service/domain/allocation";
 export { getFinanceSettings } from "./service/config/allocation";
 export {
