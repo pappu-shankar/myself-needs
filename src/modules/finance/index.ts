@@ -84,6 +84,16 @@ export {
 export { getSchemeTemplates, createSchemeTemplate } from "./service/domain/scheme-templates";
 export { getNetWorthTrend } from "./service/domain/net-worth";
 export {
+  /** The several net worths — "assets minus liabilities" is one sentence and
+   * more than one number. See docs/prd/finance/net-worth.md. */
+  getNetWorthByScope,
+  NET_WORTH_SCOPES,
+  type NetWorthScope,
+  type NetWorthView,
+  type NetWorthByScope,
+  type NetWorthComponent,
+} from "./service/domain/net-worth-scopes";
+export {
   getGoals,
   getGoal,
   createGoal,

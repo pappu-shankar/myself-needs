@@ -28,6 +28,9 @@ const HOLDING_COLUMNS = {
   rateBps: investmentHoldings.rateBps,
   currency: investmentHoldings.currency,
   liquidity: investmentHoldings.liquidity,
+  /** Whose holding it is — net worth is attributed per entity, so a listing
+   * that omitted this could only ever report one scope. */
+  entityId: investmentHoldings.entityId,
   maturityDate: investmentHoldings.maturityDate,
   schemeTemplateId: investmentHoldings.schemeTemplateId,
   schemeTemplateName: schemeTemplates.name,
