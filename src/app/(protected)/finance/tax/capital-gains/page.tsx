@@ -60,7 +60,7 @@ export default async function CapitalGainsPage({
           </p>
         </CardHeader>
         <CardContent>
-          {!capitalGains.complete && (
+          {capitalGains.unconverted.length > 0 && (
             <div
               role="alert"
               className="border-destructive text-destructive mb-4 rounded-md border p-3 text-sm"
@@ -79,6 +79,43 @@ export default async function CapitalGainsPage({
                 ))}
               </ul>
             </div>
+          )}
+          {/* A disposal the FIFO matcher could not account for is a different
+              gap from an unconvertible one, and needs a different fix from the
+              user — recording the units, or the purchase that is missing. */}
+          {capitalGains.unmatched.length > 0 && (
+            <div
+              role="alert"
+              className="border-destructive text-destructive mb-4 rounded-md border p-3 text-sm"
+            >
+              <p className="font-medium">
+                This estimate is short: {capitalGains.unmatched.length} disposal
+                {capitalGains.unmatched.length === 1 ? "" : "s"} could not be matched to a cost
+                basis, so {capitalGains.unmatched.length === 1 ? "its" : "their"} gain is not
+                included.
+              </p>
+              <ul className="mt-2 list-disc pl-5">
+                {capitalGains.unmatched.map((u, i) => (
+                  <li key={`${u.holdingId}-${u.date ?? "all"}-${i}`}>
+                    {u.holdingName}
+                    {u.date ? `, ${u.date}` : ""}:{" "}
+                    <Money minor={u.proceedsMinor} currency={STATUTORY_CURRENCY} /> —{" "}
+                    {u.reason === "no_units_recorded"
+                      ? "no unit count recorded on the sale, so there is nothing to match it against. Edit the sale to add the units."
+                      : "more units were sold than were ever recorded as bought. A purchase is missing from this holding's history."}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {capitalGains.netLossMinor > 0 && (
+            <p className="text-muted-foreground mb-4 text-sm">
+              Net capital loss available for set-off:{" "}
+              <span className="text-foreground tabular-nums font-medium">
+                <Money minor={capitalGains.netLossMinor} currency={STATUTORY_CURRENCY} />
+              </span>
+              . No tax is owed on a loss; how it is set off or carried forward is not modelled here.
+            </p>
           )}
           <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>

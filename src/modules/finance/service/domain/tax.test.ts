@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { setupTestDb, teardownTestDb } from "@/test/db";
+import { toUnitsScaled } from "../utility/units";
 import {
   get80cUtilization,
   get80dUtilization,
@@ -54,14 +55,35 @@ function seedHolding(
   });
 }
 
+/**
+ * Unit-based FIFO needs units, so every flow records them.
+ *
+ * The default buys and sells the same whole position (100 units), which keeps
+ * each fixture's economics exactly what they were under the old amount-matching
+ * model: the cost basis is the whole contribution and the proceeds are the
+ * whole redemption, so the gain is still proceeds minus cost. That is why the
+ * hand-verified figures below did not have to move.
+ */
+const WHOLE_POSITION_UNITS = 100;
+
 function seedFlow(
   holdingId: number,
   date: string,
   amountMinor: number,
   flowType: "contribution" | "redemption",
   currency: Currency = "INR",
+  units: number = WHOLE_POSITION_UNITS,
 ) {
-  return insertCashFlow({ holdingId, date, amountMinor, flowType, currency });
+  return insertCashFlow({
+    holdingId,
+    date,
+    amountMinor,
+    flowType,
+    currency,
+    // The ledger's sign convention is on the amount; the matcher reads
+    // direction from the units, so they have to agree.
+    unitsScaled: amountMinor < 0 ? toUnitsScaled(units) : -toUnitsScaled(units),
+  });
 }
 
 describe("tax service", () => {
@@ -199,15 +221,49 @@ describe("tax service", () => {
   });
 
   describe("getCapitalGainsEstimate (FIFO gain matching)", () => {
-    it("a redemption within the matched lot's cost basis is return of capital, not a gain", () => {
+    it("hand-verified: a position sold below its cost is a capital LOSS, not a zero-gain event", () => {
+      // This test previously asserted the opposite, and it was the clearest
+      // symptom of the defect unit-based matching fixes. The old model drew
+      // proceeds down against cost and counted only the excess, so selling a
+      // ₹10,000 position for ₹6,000 produced *no event at all* — a ₹4,000 loss
+      // was simply unrepresentable, which is also why loss harvesting could
+      // never be surfaced.
       const holding = seedHolding("Stock RC");
       seedFlow(holding.id, "2020-01-01", -1_000_000, "contribution");
       seedFlow(holding.id, "2021-01-01", 600_000, "redemption");
 
       const estimate = getCapitalGainsEstimate(fiscalYearOf("2021-01-01"));
 
-      expect(estimate.events).toHaveLength(0);
+      expect(estimate.events).toHaveLength(1);
+      expect(estimate.events[0].costBasisMinor).toBe(1_000_000);
+      expect(estimate.events[0].proceedsMinor).toBe(600_000);
+      expect(estimate.events[0].gainMinor).toBe(-400_000);
+      // Held exactly 12 months, so short-term (s.2(42A) is "more than"), and
+      // the loss reduces that bucket rather than being clamped at zero.
+      expect(estimate.events[0].isLongTerm).toBe(false);
+      expect(estimate.stcgEquityMinor).toBe(-400_000);
+      expect(estimate.ltcgEquityMinor).toBe(0);
+      // No tax is owed on a loss. Applying the rate to a negative bucket would
+      // assert a refund, which an estimate has no business doing.
       expect(estimate.totalTaxMinor).toBe(0);
+      // The loss stays visible as the amount available for set-off.
+      expect(estimate.netLossMinor).toBe(400_000);
+    });
+
+    it("partially sells a lot, leaving the unsold units' cost behind", () => {
+      // 100 units at ₹10,000; sell 40 for ₹6,000. Cost of those 40 units is
+      // ₹4,000, so the gain is ₹2,000 — and ₹6,000 of cost stays with the 60
+      // units still held, rather than the sale consuming cost by value.
+      const holding = seedHolding("Stock Partial");
+      seedFlow(holding.id, "2020-01-01", -1_000_000, "contribution");
+      seedFlow(holding.id, "2021-06-01", 600_000, "redemption", "INR", 40);
+
+      const estimate = getCapitalGainsEstimate(fiscalYearOf("2021-06-01"));
+
+      expect(estimate.events).toHaveLength(1);
+      expect(estimate.events[0].costBasisMinor).toBe(400_000);
+      expect(estimate.events[0].gainMinor).toBe(200_000);
+      expect(estimate.complete).toBe(true);
     });
 
     it("hand-verified: gain equals proceeds beyond the FIFO-matched cost basis, split across LTCG/STCG per lot age", () => {
@@ -295,8 +351,16 @@ describe("tax service", () => {
       expect(estimate.ltcgEquityMinor).toBe(5_000_000);
       expect(estimate.complete).toBe(true);
       expect(estimate.conversions).toEqual([
-        expect.objectContaining({ date: "2020-01-01", inrMinor: -7_000_000, rateDate: "2020-01-01" }),
-        expect.objectContaining({ date: "2021-06-01", inrMinor: 12_000_000, rateDate: "2021-06-01" }),
+        expect.objectContaining({
+          date: "2020-01-01",
+          inrMinor: -7_000_000,
+          rateDate: "2020-01-01",
+        }),
+        expect.objectContaining({
+          date: "2021-06-01",
+          inrMinor: 12_000_000,
+          rateDate: "2021-06-01",
+        }),
       ]);
     });
 
@@ -321,7 +385,9 @@ describe("tax service", () => {
       seedFlow(holding.id, "2018-01-01", -1_000_000, "contribution");
       seedFlow(holding.id, "2018-02-01", -1_000_000, "contribution");
       seedFlow(holding.id, "2018-03-01", -1_000_000, "contribution");
-      seedFlow(holding.id, "2021-06-01", 3_000_001, "redemption");
+      // All 300 units in one disposal, so the single extra paisa has to be
+      // apportioned across three lots.
+      seedFlow(holding.id, "2021-06-01", 3_000_001, "redemption", "INR", 300);
 
       const estimate = getCapitalGainsEstimate(fiscalYearOf("2021-06-01"));
 

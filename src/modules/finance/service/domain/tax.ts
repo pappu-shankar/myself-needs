@@ -17,7 +17,6 @@ import {
 import { currentFiscalYear, fiscalYearOf, type FiscalYear } from "../utility/fiscal-year";
 import { UNIT_PRICED_TYPES, type InvestmentType } from "../../types";
 import { applyRateBps } from "../utility/units";
-import { divRound, toSafeNumber } from "../utility/integer-math";
 import { convert, type FxRate } from "../utility/fx";
 import {
   aggregateToBase,
@@ -29,6 +28,7 @@ import {
 } from "../utility/aggregate";
 import type { Currency } from "../../db/schema/currency";
 import type { ConfidenceLevel } from "../../db/schema/provenance";
+import { matchHistory, type LedgerEvent } from "./lots";
 
 /**
  * Tax is computed in statutory INR paise, not in the user's base currency
@@ -129,16 +129,14 @@ export function get80dUtilization(
 
 const EQUITY_RATE_TYPES = new Set<InvestmentType>(["equity", "mutual_fund_domestic"]);
 
-interface Lot {
-  date: string;
-  remainingCostMinor: number;
-  confidence: ConfidenceLevel;
-}
-
 /** A cash flow already restated in statutory INR paise. */
 interface StatutoryFlow {
   date: string;
   amountMinor: number;
+  /** Units bought (+) or sold (−), scaled by `UNITS_SCALE`. Null on a flow
+   * that moved no units (a dividend) and on legacy rows recorded before units
+   * were tracked — see `computeFifoGains` for what that costs. */
+  unitsScaled: number | null;
   flowType: string;
   confidence: ConfidenceLevel;
 }
@@ -175,8 +173,15 @@ export interface GainEvent {
   /** The matched lot's date — this is what decides long vs. short term. */
   acquisitionDate: string;
   redemptionDate: string;
-  /** Statutory INR paise. */
+  /** Statutory INR paise. **Signed** — negative is a real capital loss, which
+   * the previous amount-matching model could not produce. */
   gainMinor: number;
+  /** The two halves the gain is the difference of, so a figure can be checked
+   * rather than taken on trust. */
+  costBasisMinor: number;
+  proceedsMinor: number;
+  /** Units disposed of, scaled by `UNITS_SCALE`. */
+  unitsScaled: number;
   currency: Currency;
   isLongTerm: boolean;
   category: "equity" | "other";
@@ -185,20 +190,21 @@ export interface GainEvent {
 }
 
 /**
- * FIFO-matches each redemption against the oldest unconsumed contributions.
- * Proceeds up to the matched cost basis are treated as return of capital
- * (no gain); only proceeds *beyond* the matched cost basis are gain, split
- * across the lots touched in proportion to how much of each lot's cost was
- * consumed (each portion's own date decides LTCG/STCG). Dividends/interest
- * don't consume the queue — only `flowType: "redemption"` does. No unit
- * tracking exists in this schema (see docs/prd/finance/investments.md), so
- * this amount-matching model is a deliberate approximation: a redemption that
- * comes in *below* its matched lots' cost basis registers as a zero-gain
- * event, never a loss — see the roadmap notes.
+ * FIFO-matches each sale against the oldest unsold purchase lots, **by units**,
+ * and reports the signed gain.
  *
- * The split is apportioned on a running cumulative total rather than per lot,
- * so the integer shares add back to the gain exactly instead of losing a
- * paisa per lot to rounding.
+ * This replaced an amount-matching model that drew proceeds down against cost
+ * and counted only the excess as gain. That model could not express a capital
+ * loss at all — a sale below its cost basis registered as a zero-gain event —
+ * which made loss harvesting invisible and overstated taxable gains. The
+ * matching engine itself lives in `lots.ts`, pure and database-free.
+ *
+ * A flow with no recorded units cannot be matched. Rather than guessing a unit
+ * count from the amount — which would fabricate a cost basis — such a flow is
+ * returned as unmatched, and the estimate says it is incomplete. Legacy rows
+ * entered before units were tracked fall in this bucket, so the user is told
+ * which holdings need their history completed instead of being shown a figure
+ * computed from invented data.
  */
 function computeFifoGains(
   holdingId: number,
@@ -206,66 +212,77 @@ function computeFifoGains(
   flows: readonly StatutoryFlow[],
   ltcgThresholdMonths: number,
   category: "equity" | "other",
+  unmatched: UnmatchedDisposal[],
 ): GainEvent[] {
-  const sorted = [...flows].sort((a, b) => a.date.localeCompare(b.date));
-  const lots: Lot[] = [];
-  const events: GainEvent[] = [];
-
-  for (const cf of sorted) {
-    if (cf.amountMinor < 0) {
-      lots.push({
-        date: cf.date,
-        remainingCostMinor: -cf.amountMinor,
-        confidence: cf.confidence,
-      });
+  const events: LedgerEvent[] = [];
+  for (const flow of flows) {
+    const isDisposal = flow.flowType === "redemption";
+    // A purchase is money out (negative), a disposal money in. Units carry the
+    // direction for the matcher, so both are passed as positive amounts.
+    if (flow.unitsScaled === null || flow.unitsScaled === 0) {
+      if (isDisposal && flow.amountMinor > 0) {
+        unmatched.push({
+          holdingId,
+          holdingName,
+          date: flow.date,
+          proceedsMinor: flow.amountMinor,
+          reason: "no_units_recorded",
+        });
+      }
       continue;
     }
-    if (cf.flowType !== "redemption") continue;
-
-    let remainingProceedsMinor = cf.amountMinor;
-    const touched: { lot: Lot; costConsumedMinor: number }[] = [];
-    while (remainingProceedsMinor > 0 && lots.length > 0) {
-      const lot = lots[0];
-      const consumedMinor = Math.min(remainingProceedsMinor, lot.remainingCostMinor);
-      lot.remainingCostMinor -= consumedMinor;
-      remainingProceedsMinor -= consumedMinor;
-      touched.push({ lot, costConsumedMinor: consumedMinor });
-      if (lot.remainingCostMinor <= 0) lots.shift();
-    }
-
-    const totalCostConsumedMinor = touched.reduce((sum, t) => sum + t.costConsumedMinor, 0);
-    const excessGainMinor = remainingProceedsMinor;
-    if (touched.length === 0 || excessGainMinor <= 0 || totalCostConsumedMinor <= 0) continue;
-
-    let cumulativeCostMinor = 0;
-    let allocatedMinor = 0;
-    for (const t of touched) {
-      cumulativeCostMinor += t.costConsumedMinor;
-      const throughHereMinor = toSafeNumber(
-        divRound(
-          BigInt(excessGainMinor) * BigInt(cumulativeCostMinor),
-          BigInt(totalCostConsumedMinor),
-        ),
-        "computeFifoGains",
-      );
-      const gainMinor = throughHereMinor - allocatedMinor;
-      allocatedMinor = throughHereMinor;
-      if (gainMinor <= 0) continue;
-      events.push({
-        holdingId,
-        holdingName,
-        acquisitionDate: t.lot.date,
-        redemptionDate: cf.date,
-        gainMinor,
-        currency: STATUTORY_CURRENCY,
-        isLongTerm: isLongTermHolding(t.lot.date, cf.date, ltcgThresholdMonths),
-        category,
-        confidence: weakestConfidence([t.lot.confidence, cf.confidence]),
-      });
-    }
+    events.push({
+      date: flow.date,
+      unitsScaled: flow.unitsScaled,
+      amountMinor: Math.abs(flow.amountMinor),
+      confidence: flow.confidence,
+      consumesLots: isDisposal,
+    });
   }
 
-  return events;
+  const result = matchHistory(events);
+  if (result.unmatchedUnitsScaled > 0) {
+    unmatched.push({
+      holdingId,
+      holdingName,
+      date: null,
+      proceedsMinor: result.unmatchedProceedsMinor,
+      reason: "units_exceed_lots",
+    });
+  }
+
+  return result.matches.map((match) => ({
+    holdingId,
+    holdingName,
+    acquisitionDate: match.acquisitionDate,
+    redemptionDate: match.saleDate,
+    gainMinor: match.gainMinor,
+    costBasisMinor: match.costBasisMinor,
+    proceedsMinor: match.proceedsMinor,
+    unitsScaled: match.unitsScaled,
+    currency: STATUTORY_CURRENCY,
+    isLongTerm: isLongTermHolding(match.acquisitionDate, match.saleDate, ltcgThresholdMonths),
+    category,
+    confidence: match.confidence,
+  }));
+}
+
+/**
+ * A disposal the matcher could not account for.
+ *
+ * Surfaced rather than swallowed: both reasons mean the recorded history is
+ * incomplete, and a gains figure that quietly omitted the sale would read as a
+ * complete one.
+ */
+export interface UnmatchedDisposal {
+  holdingId: number;
+  holdingName: string;
+  /** The sale's date, or null when the shortfall is across the whole history. */
+  date: string | null;
+  proceedsMinor: number;
+  reason:
+    | /** The sale recorded no unit count, so there is no basis to match it to. */ "no_units_recorded"
+    | /** More units were sold than were ever bought. */ "units_exceed_lots";
 }
 
 /**
@@ -300,6 +317,9 @@ export interface CapitalGainsEstimate {
   taxEquityStcgMinor: number;
   taxOtherMinor: number;
   totalTaxMinor: number;
+  /** Total net loss across the buckets that are negative, as a positive
+   * figure — the amount available for set-off. Zero when nothing lost. */
+  netLossMinor: number;
   /** Every non-INR flow that fed these figures, with the rate used for it, in
    * date order — this is an audit trail, and a trail is read chronologically. */
   conversions: StatutoryConversion[];
@@ -307,6 +327,9 @@ export interface CapitalGainsEstimate {
    * rather than converted at a guessed rate, so the estimate is short by
    * whatever they would have contributed — which is what `complete` says. */
   unconverted: UnconvertedFlow[];
+  /** Disposals the FIFO matcher could not account for, for the same reason:
+   * reported, not swallowed. */
+  unmatched: UnmatchedDisposal[];
   complete: boolean;
   confidence: ConfidenceLevel;
   confidenceMix: ConfidenceShare[];
@@ -325,6 +348,7 @@ function toStatutoryFlows(
       flows.push({
         date: cf.date,
         amountMinor: cf.amountMinor,
+        unitsScaled: cf.unitsScaled,
         flowType: cf.flowType,
         confidence: cf.confidence,
       });
@@ -354,6 +378,7 @@ function toStatutoryFlows(
     flows.push({
       date: cf.date,
       amountMinor: converted.minor,
+      unitsScaled: cf.unitsScaled,
       flowType: cf.flowType,
       confidence: cf.confidence,
     });
@@ -380,6 +405,7 @@ export function getCapitalGainsEstimate(
   const events: GainEvent[] = [];
   const conversions: StatutoryConversion[] = [];
   const unconverted: UnconvertedFlow[] = [];
+  const unmatched: UnmatchedDisposal[] = [];
 
   for (const holding of listHoldings()) {
     if (!UNIT_PRICED_TYPES.has(holding.type)) continue;
@@ -390,9 +416,14 @@ export function getCapitalGainsEstimate(
         : settings.otherLtcgThresholdMonths;
     const flows = toStatutoryFlows(holding, rates, conversions, unconverted);
     events.push(
-      ...computeFifoGains(holding.id, holding.name, flows, thresholdMonths, category).filter(
-        (e) => e.redemptionDate >= fy.start && e.redemptionDate <= fy.end,
-      ),
+      ...computeFifoGains(
+        holding.id,
+        holding.name,
+        flows,
+        thresholdMonths,
+        category,
+        unmatched,
+      ).filter((e) => e.redemptionDate >= fy.start && e.redemptionDate <= fy.end),
     );
   }
   events.sort((a, b) => a.redemptionDate.localeCompare(b.redemptionDate));
@@ -405,16 +436,39 @@ export function getCapitalGainsEstimate(
   const ltcgOtherMinor = sum((e) => e.category === "other" && e.isLongTerm);
   const stcgOtherMinor = sum((e) => e.category === "other" && !e.isLongTerm);
 
-  const taxEquityLtcgMinor = applyRateBps(
-    Math.max(0, ltcgEquityMinor - settings.equityLtcgExemptionMinor),
+  /**
+   * Tax on a bucket, never negative.
+   *
+   * Now that a bucket can be a net *loss* — unit-based matching made that
+   * expressible — applying a rate to it straight would produce a negative tax,
+   * i.e. assert a refund. A loss does not create a liability: it is set off
+   * against other gains or carried forward, and neither is modelled here
+   * (this is an estimate, not a filing tool — decision 25). So the tax floors
+   * at zero and the loss stays visible in the bucket figure itself, which is
+   * what loss harvesting needs to see.
+   */
+  const taxOn = (gainMinor: number, rateBps: number) =>
+    applyRateBps(Math.max(0, gainMinor), rateBps);
+
+  const taxEquityLtcgMinor = taxOn(
+    ltcgEquityMinor - settings.equityLtcgExemptionMinor,
     settings.equityLtcgRateBps,
   );
-  const taxEquityStcgMinor = applyRateBps(stcgEquityMinor, settings.equityStcgRateBps);
+  const taxEquityStcgMinor = taxOn(stcgEquityMinor, settings.equityStcgRateBps);
   const taxOtherMinor =
-    applyRateBps(ltcgOtherMinor, settings.otherLtcgRateBps) +
-    applyRateBps(stcgOtherMinor, settings.otherStcgRateBps);
+    taxOn(ltcgOtherMinor, settings.otherLtcgRateBps) +
+    taxOn(stcgOtherMinor, settings.otherStcgRateBps);
+  /** Net losses per bucket, positive numbers, for the loss-harvesting view.
+   * Stated separately because a bucket figure that is negative is easy to read
+   * past, and the amount available for set-off is the actionable number. */
+  const netLossMinor = [ltcgEquityMinor, stcgEquityMinor, ltcgOtherMinor, stcgOtherMinor]
+    .filter((v) => v < 0)
+    .reduce((sum, v) => sum - v, 0);
 
-  const complete = unconverted.length === 0;
+  // A disposal the matcher could not account for leaves the estimate short in
+  // the same way an unconvertible flow does, so it counts against `complete`
+  // too — otherwise a figure missing a whole sale would present as whole.
+  const complete = unconverted.length === 0 && unmatched.length === 0;
   return {
     fiscalYear: fy,
     policyFiscalYear: settings.fiscalYear,
@@ -429,10 +483,12 @@ export function getCapitalGainsEstimate(
     taxEquityStcgMinor,
     taxOtherMinor,
     totalTaxMinor: taxEquityLtcgMinor + taxEquityStcgMinor + taxOtherMinor,
+    netLossMinor,
     // FIFO matching walks sells against buys, so pushes land out of order.
     // Sorted here rather than at each push: one place, one guarantee.
     conversions: [...conversions].sort((a, b) => a.date.localeCompare(b.date)),
     unconverted,
+    unmatched,
     complete,
     // A figure that is missing flows cannot claim the confidence of the flows
     // it did include — how much is absent is exactly what isn't known.

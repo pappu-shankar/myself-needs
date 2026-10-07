@@ -14,6 +14,7 @@ import { createHolding, createCashFlow } from "../investments";
 import { createInsurancePolicy } from "../insurance";
 import { createRecurringRule } from "../recurring";
 import { createTransaction } from "../transactions";
+import { toUnitsScaled } from "../../utility/units";
 
 beforeEach(setupTestDb);
 afterEach(teardownTestDb);
@@ -86,17 +87,24 @@ describe("contributionLimitsRule", () => {
 
 describe("ltcgApproachingRule", () => {
   it("fires when equity LTCG is within the approaching threshold of the exemption but not yet taxed", () => {
+    // Units are required: capital gains are matched by unit FIFO now, so a
+    // flow with no unit count has no cost basis to match against and is
+    // reported as unmatched rather than guessed at. Buying and selling the
+    // same 100 units keeps the economics as before — ₹1,00,000 cost against
+    // ₹2,20,000 proceeds, a ₹1,20,000 long-term gain.
     const holding = createHolding({ type: "equity", name: "Acme Corp" });
     createCashFlow({
       holdingId: holding.id,
       date: monthsAgo(13),
       amountMinor: -10000000,
+      unitsScaled: toUnitsScaled(100),
       flowType: "contribution",
     });
     createCashFlow({
       holdingId: holding.id,
       date: todayStr(),
       amountMinor: 22000000,
+      unitsScaled: -toUnitsScaled(100),
       flowType: "redemption",
     });
 
