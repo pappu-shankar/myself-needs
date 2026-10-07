@@ -225,6 +225,13 @@
       "when": 1791316657807,
       "tag": "0031_cuddly_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791352372053,
+      "tag": "0032_light_wallow",
+      "breakpoints": true
     }
   ]
 }

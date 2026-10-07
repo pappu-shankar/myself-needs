@@ -3,9 +3,9 @@ import { listAllocationTargets } from "../../db/queries/config/allocation-target
 import { getSettings, getBaseCurrency } from "../../db/queries/config/settings";
 import { listFxRatesAsOf } from "../../db/queries/config/fx-rates";
 import { getHoldingsWithValue } from "./investments";
+import { getAllocationByDimension } from "./allocation-dimensions";
 import { aggregateToBase, type MoneyAggregate } from "../utility/aggregate";
 import type { Currency } from "../../db/schema/currency";
-import type { InvestmentType } from "../../types";
 import { todayIso } from "@/lib/dates";
 
 /**
@@ -133,38 +133,44 @@ export function getCurrentAllocation(): AllocationView {
 
 type CoarseClass = "equity" | "debt" | "gold" | "cash";
 
-/** Every unit-priced/accrual/net-invested investment type folds into "equity" or "debt" for the coarse equity/debt/gold/cash split the suggested-target heuristic works in. */
-const COARSE_MAP: Record<InvestmentType, "equity" | "debt" | "gold"> = {
-  equity: "equity",
-  intl_equity: "equity",
-  mutual_fund_domestic: "equity",
-  mutual_fund_intl: "equity",
-  bond: "debt",
-  fd: "debt",
-  rd: "debt",
-  chit_fund: "debt",
-  govt_scheme: "debt",
-  gold: "gold",
-  // Jewellery/silver/other physical assets — closest in spirit to the gold hedge bucket.
-  other_asset: "gold",
-};
-
-/** Base-currency minor units per coarse bucket, plus the net worth they were
+/**
+ * Base-currency minor units per coarse bucket, plus the net worth they were
  * measured against, so the caller divides by the same denominator the buckets
- * were converted into. */
+ * were converted into.
+ *
+ * Reads the asset classes the dimensional allocation resolves rather than
+ * keeping a second mapping of its own — a fund's class comes from its
+ * `fund_category` there, so the target heuristic and the allocation chart
+ * cannot disagree about what counts as equity.
+ */
 function getCurrentCoarseAllocation(): {
   coarse: Record<CoarseClass, number>;
+  /** Value the four coarse buckets do not cover: property, private holdings,
+   * and anything the user has not classified. Surfaced rather than folded into
+   * a bucket, because the age-based heuristic only has an opinion about
+   * equity, debt, gold and cash — assigning property to one of them would make
+   * the suggested split advice about something it never considered. */
+  unallocatedMinor: number;
   netWorth: MoneyAggregate;
 } {
   const coarse: Record<CoarseClass, number> = { equity: 0, debt: 0, gold: 0, cash: 0 };
-  const view = getCurrentAllocation();
-  for (const row of view.rows) {
-    // Money owed to you isn't equity/debt/gold — folds into the "cash" bucket for this coarse split.
-    if (row.assetClass === "cash" || row.assetClass === "receivable")
-      coarse.cash += row.value.baseMinor;
-    else coarse[COARSE_MAP[row.assetClass as InvestmentType]] += row.value.baseMinor;
+  let unallocatedMinor = 0;
+  const assetClass = getAllocationByDimension("total").dimensions.asset_class;
+
+  for (const slice of assetClass.slices) {
+    switch (slice.bucket) {
+      case "equity":
+      case "debt":
+      case "gold":
+      case "cash":
+        coarse[slice.bucket] += slice.value.baseMinor;
+        break;
+      default:
+        unallocatedMinor += slice.value.baseMinor;
+    }
   }
-  return { coarse, netWorth: view.netWorth };
+
+  return { coarse, unallocatedMinor, netWorth: assetClass.total };
 }
 
 const GOLD_HEDGE_PERCENT = 5;
@@ -211,6 +217,10 @@ export interface AllocationTargetRow {
 
 export interface AllocationReport {
   rows: AllocationTargetRow[];
+  /** Value outside equity/debt/gold/cash — property, private holdings, and
+   * anything unclassified. A target split shown without this reads as though
+   * it covered the whole portfolio. */
+  unallocatedMinor: number;
   /** The denominator every `currentPercentage` was computed against, carrying
    * the rates it used. A variance shown without this is unauditable. */
   netWorth: MoneyAggregate;
@@ -220,7 +230,7 @@ export function getAllocationReport(): AllocationReport {
   const settings = getSettings();
   const age = settings?.dateOfBirth ? computeAge(settings.dateOfBirth) : null;
 
-  const { coarse, netWorth } = getCurrentCoarseAllocation();
+  const { coarse, unallocatedMinor, netWorth } = getCurrentCoarseAllocation();
   const suggested = computeSuggestedTargets(age);
   const stored = new Map(listAllocationTargets().map((t) => [t.assetClass, t.targetPercentage]));
   const canShowPercent = netWorth.complete && netWorth.baseMinor > 0;
@@ -240,5 +250,5 @@ export function getAllocationReport(): AllocationReport {
     };
   });
 
-  return { rows, netWorth };
+  return { rows, netWorth, unallocatedMinor };
 }

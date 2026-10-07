@@ -1,0 +1,11 @@
+-- A fund's own category, which decides its asset class.
+--
+-- Classification previously read holding `type` alone, so every mutual fund
+-- counted as equity — a liquid or gilt fund included — overstating equity
+-- weight by exactly the debt-fund balance.
+--
+-- Left NULL for every existing row on purpose. Backfilling a guess from the
+-- fund's name or type is how a wrong classification becomes invisible; NULL
+-- reads as "unclassified" in every allocation view, which is both honest and
+-- the only state that prompts anyone to fix it.
+ALTER TABLE `finance_investment_holdings` ADD `fund_category` text;

@@ -65,6 +65,15 @@ const NON_FINANCIAL_HOLDING_TYPES = new Set(["other_asset"]);
 
 export interface NetWorthComponent {
   kind: "account" | "holding";
+  /** The holding type, or the account type — the asset-class dimension reads
+   * it, and null never occurs (both tables have a NOT NULL type). */
+  type: string;
+  /** Allocation dimensions, null when the user has not recorded one. Null
+   * means **unclassified** everywhere it is read, never a default. */
+  fundCategory: string | null;
+  sector: string | null;
+  country: string | null;
+  marketCapBand: string | null;
   id: number;
   name: string;
   entityId: number | null;
@@ -103,7 +112,7 @@ export interface NetWorthView {
  * Collect every account and holding once, with its entity, liquidity, kind and
  * the stake in force — the single pass every scope then filters.
  */
-function collectComponents(asOf: string, selfEntityId: number): NetWorthComponent[] {
+export function collectComponents(asOf: string, selfEntityId: number): NetWorthComponent[] {
   const stakes = listEntityStakes();
   const preloaded: HoldingLedgerSource = {
     flowsByHolding: allCashFlowsByHolding(),
@@ -119,6 +128,12 @@ function collectComponents(asOf: string, selfEntityId: number): NetWorthComponen
     if (bps === null) continue;
     components.push({
       kind: "account",
+      type: account.type,
+      // An account is cash or debt; the fund dimensions do not apply to it.
+      fundCategory: null,
+      sector: null,
+      country: null,
+      marketCapBand: null,
       id: account.id,
       name: account.name,
       entityId,
@@ -142,6 +157,11 @@ function collectComponents(asOf: string, selfEntityId: number): NetWorthComponen
     if (bps === null) continue;
     components.push({
       kind: "holding",
+      type: holding.type,
+      fundCategory: holding.fundCategory,
+      sector: holding.sector,
+      country: holding.country,
+      marketCapBand: holding.marketCapBand,
       id: holding.id,
       name: holding.name,
       entityId,
@@ -181,7 +201,7 @@ function stakeFor(
 }
 
 /** Which components a scope counts. */
-function includedIn(
+export function includedIn(
   scope: NetWorthScope,
   component: NetWorthComponent,
   entityKindById: ReadonlyMap<number, string>,

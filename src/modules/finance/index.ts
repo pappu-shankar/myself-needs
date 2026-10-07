@@ -114,6 +114,17 @@ export {
   type FlowSide,
 } from "./service/domain/cash-flow";
 export { getCurrentAllocation, getAllocationReport } from "./service/domain/allocation";
+export {
+  /** Allocation along every axis, over the same components as net worth, so
+   * the two reconcile. See docs/prd/finance/allocation.md. */
+  getAllocationByDimension,
+  getAllocationCrossTab,
+  ALLOCATION_DIMENSIONS,
+  UNCLASSIFIED,
+  type AllocationDimension,
+  type AllocationDimensionView,
+  type AllocationSlice,
+} from "./service/domain/allocation-dimensions";
 export { getFinanceSettings } from "./service/config/allocation";
 export {
   get80cUtilization,

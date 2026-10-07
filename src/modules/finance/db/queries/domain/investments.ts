@@ -31,6 +31,11 @@ const HOLDING_COLUMNS = {
   /** Whose holding it is — net worth is attributed per entity, so a listing
    * that omitted this could only ever report one scope. */
   entityId: investmentHoldings.entityId,
+  /** Allocation dimensions. Null means unclassified, never a default. */
+  fundCategory: investmentHoldings.fundCategory,
+  sector: investmentHoldings.sector,
+  country: investmentHoldings.country,
+  marketCapBand: investmentHoldings.marketCapBand,
   maturityDate: investmentHoldings.maturityDate,
   schemeTemplateId: investmentHoldings.schemeTemplateId,
   schemeTemplateName: schemeTemplates.name,

@@ -45,6 +45,20 @@ export const investmentHoldings = sqliteTable("finance_investment_holdings", {
   liquidity: text("liquidity", { enum: ["liquid", "semi_liquid", "illiquid"] })
     .notNull()
     .default("liquid"),
+  /**
+   * A fund's own category, which is what decides its asset class.
+   *
+   * The previous mapping classified by holding `type` alone, so every mutual
+   * fund counted as equity — a liquid or gilt fund included. That overstated
+   * equity weight by exactly the debt-fund balance, in the one figure an
+   * investor uses to decide whether they are over-exposed. Null means
+   * unclassified, and an unclassified fund shows as unclassified rather than
+   * defaulting to equity: a wrong classification is worse than a missing one,
+   * because only the missing one prompts anybody to fix it.
+   */
+  fundCategory: text("fund_category", {
+    enum: ["equity", "debt", "hybrid", "commodity", "real_estate", "other"],
+  }),
   /** Allocation dimensions. User-editable: no reference feed supplies them. */
   sector: text("sector"),
   country: text("country"),
